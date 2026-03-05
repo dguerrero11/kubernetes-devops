@@ -1,0 +1,83 @@
+# ============================================================
+# PERSISTENTVOLUME (PV) - Backend NFS
+# ============================================================
+# PersistentVolume = una pieza de almacenamiento en el cluster.
+# Es un recurso GLOBAL (no tiene namespace).
+# Lo crea el administrador del cluster.
+#
+# Ciclo de vida del almacenamiento en Kubernetes:
+#   Admin crea PV → Developer crea PVC → Pod usa PVC
+#
+# Modos de acceso (accessModes):
+#   ReadWriteOnce (RWO)  → un solo nodo puede leer Y escribir
+#   ReadOnlyMany  (ROX)  → múltiples nodos pueden LEER
+#   ReadWriteMany (RWX)  → múltiples nodos pueden leer Y escribir
+#   (NFS soporta RWX, que es ideal para múltiples réplicas)
+#
+# Políticas de reciclado (persistentVolumeReclaimPolicy):
+#   Retain  → al borrar PVC, el PV queda (datos seguros, requiere limpieza manual)
+#   Delete  → al borrar PVC, el PV y los datos se eliminan automáticamente
+#   Recycle → (obsoleto) limpia el volumen y lo pone disponible de nuevo
+#
+# Tu servidor NFS:
+#   IP:   192.168.109.210
+#   Path: /srv/nfs/k8s
+#
+# PREREQUISITO en los nodos del cluster:
+#   # Instalar cliente NFS en master y workers:
+#   dnf install -y nfs-utils
+#   # Verificar que el NFS sea accesible:
+#   showmount -e 192.168.109.210
+#
+# COMANDOS ÚTILES:
+#   kubectl apply -f 01-persistentvolume-nfs.yaml
+#   kubectl get pv
+#   kubectl get pv -o wide
+#   kubectl describe pv pv-nfs-k8s
+# ============================================================
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-nfs-k8s
+  labels:
+    type: nfs
+    storage: k8s
+spec:
+  capacity:
+    storage: 10Gi             # Capacidad total del PV
+
+  accessModes:
+    - ReadWriteMany           # NFS soporta acceso simultáneo desde múltiples nodos
+
+  persistentVolumeReclaimPolicy: Retain   # Al borrar PVC → PV queda, datos seguros
+
+  storageClassName: nfs-manual            # Etiqueta para que el PVC lo encuentre
+
+  nfs:
+    server: 192.168.109.210               # IP del servidor NFS
+    path: /srv/nfs/k8s                    # Path exportado
+
+---
+# Segundo PV usando el path k8s-storage (para demostrar múltiples PVs)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-nfs-storage
+  labels:
+    type: nfs
+    storage: k8s-storage
+spec:
+  capacity:
+    storage: 20Gi
+
+  accessModes:
+    - ReadWriteMany
+
+  persistentVolumeReclaimPolicy: Retain
+
+  storageClassName: nfs-manual
+
+  nfs:
+    server: 192.168.109.210
+    path: /srv/nfs/k8s-storage

@@ -1,0 +1,59 @@
+# ============================================================
+# CONFIGMAP - Como variables de entorno en un Pod
+# ============================================================
+# Dos maneras de inyectar un ConfigMap como env vars:
+#
+# 1. envFrom: carga TODAS las claves del ConfigMap como variables
+#    → Más simple, pero todas las claves se convierten en env vars
+#
+# 2. env.valueFrom: elige claves ESPECÍFICAS del ConfigMap
+#    → Más control, puedes renombrar las variables
+#
+# IMPORTANTE:
+#   - Los env vars se inyectan al INICIAR el Pod
+#   - Si el ConfigMap cambia, el Pod NO se entera automáticamente
+#   - Para que el Pod use la nueva config → debes reiniciarlo
+#   - (los volúmenes sí se actualizan automáticamente, ver 03-...)
+#
+# COMANDOS ÚTILES:
+#   kubectl apply -f 01-configmap-literal.yaml   (primero el ConfigMap)
+#   kubectl apply -f 02-configmap-como-envvar.yaml
+#
+#   kubectl get pods
+#   kubectl exec -it pod-con-envfrom -- env           (ver todas las vars)
+#   kubectl exec -it pod-con-envfrom -- env | grep APP
+#   kubectl exec -it pod-con-envfrom -- printenv APP_ENV
+# ============================================================
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-con-envfrom
+  labels:
+    demo: configmap-env
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+
+      # MÉTODO 1: Cargar TODAS las claves del ConfigMap como env vars
+      envFrom:
+        - configMapRef:
+            name: app-config       # Nombre del ConfigMap (debe existir)
+
+      # MÉTODO 2: Cargar claves ESPECÍFICAS (con nombre personalizado opcional)
+      env:
+        - name: MI_ENTORNO         # Nombre de la variable en el contenedor
+          valueFrom:
+            configMapKeyRef:
+              name: app-config     # ConfigMap de origen
+              key: APP_ENV         # Clave específica a obtener
+
+        - name: PUERTO_APP
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: APP_PORT
+
+        - name: VARIABLE_FIJA      # También se puede mezclar con valores fijos
+          value: "esto-no-viene-del-configmap"

@@ -1,0 +1,101 @@
+# ============================================================
+# INGRESS - Múltiples aplicaciones (hostname y path)
+# ============================================================
+# Este ejemplo demuestra el PODER real del Ingress:
+# Un solo punto de entrada (NodePort del Ingress Controller)
+# enruta a MÚLTIPLES aplicaciones según el hostname o el path.
+#
+# ENRUTAMIENTO POR HOSTNAME (virtual hosting):
+#   app1.192.168.109.200.nip.io  → Service: app1-svc
+#   app2.192.168.109.200.nip.io  → Service: app2-svc
+#
+# ENRUTAMIENTO POR PATH (en el mismo host):
+#   demo.192.168.109.200.nip.io/api   → Service: api-svc
+#   demo.192.168.109.200.nip.io/web   → Service: web-svc
+#
+# SETUP PARA ESTA DEMO:
+#   Crear dos deployments con diferentes imágenes para ver la diferencia:
+#
+#   kubectl create deployment app1 --image=nginx:1.25 --replicas=2
+#   kubectl expose deployment app1 --port=80 --name=app1-svc
+#
+#   kubectl create deployment app2 --image=httpd:2.4 --replicas=2
+#   kubectl expose deployment app2 --port=80 --name=app2-svc
+#
+#   kubectl apply -f 02-ingress-multiples-apps.yaml
+#
+# PROBAR (reemplazar 30080 con tu puerto NodePort):
+#   curl http://app1.192.168.109.200.nip.io:30080   → nginx
+#   curl http://app2.192.168.109.200.nip.io:30080   → apache httpd
+# ============================================================
+
+# --- INGRESS 1: Enrutamiento por hostname ---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-por-hostname
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+    # Regla 1: app1 va al service app1-svc
+    - host: app1.192.168.109.200.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app1-svc
+                port:
+                  number: 80
+
+    # Regla 2: app2 va al service app2-svc
+    - host: app2.192.168.109.200.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app2-svc
+                port:
+                  number: 80
+
+---
+# --- INGRESS 2: Enrutamiento por path (en el mismo host) ---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-por-path
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    # Reescribir el path antes de enviarlo al backend
+    # /api/algo → /algo  (quita el prefijo /api)
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: demo.192.168.109.200.nip.io
+      http:
+        paths:
+          # /api/* → app1-svc
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: app1-svc
+                port:
+                  number: 80
+
+          # /web/* → app2-svc
+          - path: /web(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: app2-svc
+                port:
+                  number: 80

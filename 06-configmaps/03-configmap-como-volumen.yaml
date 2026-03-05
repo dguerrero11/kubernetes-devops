@@ -1,0 +1,64 @@
+# ============================================================
+# CONFIGMAP - Montado como archivos en un volumen
+# ============================================================
+# Cada clave del ConfigMap se convierte en un ARCHIVO dentro del Pod.
+# El valor de la clave es el CONTENIDO del archivo.
+#
+# Ventaja clave vs env vars:
+#   → Si el ConfigMap cambia, el archivo en el Pod se ACTUALIZA
+#     automáticamente (en ~1 minuto, según el kubelet sync period)
+#   → No necesitas reiniciar el Pod
+#
+# Útil para:
+#   - Archivos de configuración (nginx.conf, app.conf, etc.)
+#   - Certificados no sensibles
+#   - Scripts de inicialización
+#
+# COMANDOS PARA DEMOSTRAR ACTUALIZACIÓN EN VIVO:
+#   kubectl apply -f 01-configmap-literal.yaml
+#   kubectl apply -f 03-configmap-como-volumen.yaml
+#
+#   # Ver el archivo montado:
+#   kubectl exec -it pod-con-volumen-cm -- cat /etc/config/APP_ENV
+#   kubectl exec -it pod-con-volumen-cm -- ls /etc/config/
+#   kubectl exec -it pod-con-volumen-cm -- cat /etc/nginx-config/nginx.conf
+#
+#   # Editar el ConfigMap y ver cómo cambia el archivo:
+#   kubectl edit cm app-config
+#   # (cambiar APP_ENV de "desarrollo" a "staging")
+#   # Esperar ~60 segundos
+#   kubectl exec -it pod-con-volumen-cm -- cat /etc/config/APP_ENV
+# ============================================================
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-con-volumen-cm
+  labels:
+    demo: configmap-volumen
+spec:
+  volumes:
+    # Volumen que usa el ConfigMap completo
+    - name: config-vol
+      configMap:
+        name: app-config          # Nombre del ConfigMap
+
+    # Volumen que monta solo claves específicas
+    - name: nginx-config-vol
+      configMap:
+        name: app-config
+        items:                    # Solo montar estas claves específicas
+          - key: nginx.conf       # La clave en el ConfigMap
+            path: nginx.conf      # El nombre del archivo resultante en el Pod
+
+  containers:
+    - name: app
+      image: nginx:1.25
+      volumeMounts:
+        # Monta TODAS las claves del ConfigMap como archivos
+        - name: config-vol
+          mountPath: /etc/config  # Cada clave → un archivo en este directorio
+
+        # Monta solo el archivo nginx.conf
+        - name: nginx-config-vol
+          mountPath: /etc/nginx-config

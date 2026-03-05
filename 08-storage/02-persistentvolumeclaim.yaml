@@ -1,0 +1,63 @@
+# ============================================================
+# PERSISTENTVOLUMECLAIM (PVC)
+# ============================================================
+# PVC = solicitud de almacenamiento por parte de un developer/Pod.
+# El developer NO necesita saber los detalles del backend (NFS, disco, cloud).
+# Kubernetes hace el "binding": busca un PV que satisfaga la solicitud.
+#
+# Binding (enlace PVC → PV):
+#   Kubernetes busca un PV que cumpla:
+#   ✓ storageClassName igual
+#   ✓ accessModes compatibles
+#   ✓ capacity >= la solicitada
+#   Si lo encuentra → BOUND
+#   Si no → PENDING (espera hasta que haya un PV disponible)
+#
+# Estados del PVC:
+#   Pending → buscando PV compatible
+#   Bound   → enlazado con un PV, listo para usar
+#   Lost    → el PV al que apuntaba ya no existe
+#
+# COMANDOS ÚTILES:
+#   kubectl apply -f 01-persistentvolume-nfs.yaml    (primero los PVs)
+#   kubectl apply -f 02-persistentvolumeclaim.yaml
+#
+#   kubectl get pvc
+#   kubectl get pv    (ver si el estado cambió a Bound)
+#   kubectl describe pvc pvc-app-datos
+#
+#   # DEMO: ver el binding automático
+#   kubectl get pvc -w    (watch para ver el cambio de Pending a Bound)
+# ============================================================
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-app-datos
+  labels:
+    app: demo
+spec:
+  storageClassName: nfs-manual     # Debe coincidir con el PV
+
+  accessModes:
+    - ReadWriteMany                # Debe ser compatible con el PV
+
+  resources:
+    requests:
+      storage: 5Gi                 # Solicita 5Gi (el PV de 10Gi puede satisfacerlo)
+
+---
+# Segundo PVC para demostrar múltiples reclamaciones
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-app-logs
+  labels:
+    app: demo
+spec:
+  storageClassName: nfs-manual
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 2Gi

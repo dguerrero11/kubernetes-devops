@@ -1,0 +1,59 @@
+# ============================================================
+# CONFIGMAP - Datos literales
+# ============================================================
+# Un ConfigMap almacena configuración NO sensible como clave-valor.
+# Permite SEPARAR la configuración del código/imagen.
+# Si necesitas cambiar config → solo actualizas el ConfigMap,
+# no necesitas reconstruir la imagen.
+#
+# Formas de usar un ConfigMap en un Pod:
+#   1. Como variables de entorno (ver 02-configmap-como-envvar.yaml)
+#   2. Montado como archivos en un volumen (ver 03-configmap-como-volumen.yaml)
+#   3. Como argumentos de línea de comandos
+#
+# COMANDOS ÚTILES:
+#   kubectl apply -f 01-configmap-literal.yaml
+#   kubectl get configmaps
+#   kubectl get cm
+#   kubectl describe cm app-config
+#   kubectl get cm app-config -o yaml    (ver el contenido completo)
+#
+#   # Crear un ConfigMap rápido por línea de comandos:
+#   kubectl create configmap mi-config --from-literal=ENV=produccion --from-literal=PORT=8080
+#
+#   # Desde un archivo:
+#   kubectl create configmap mi-config --from-file=nginx.conf
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  labels:
+    app: demo
+data:
+  # Pares clave: valor simples
+  APP_ENV: "desarrollo"
+  APP_PORT: "8080"
+  APP_LOG_LEVEL: "debug"
+  APP_MAX_CONNECTIONS: "100"
+  DB_HOST: "mysql-service"
+  DB_PORT: "3306"
+  DB_NAME: "appdb"
+
+  # También puede contener archivos completos (multilinea)
+  nginx.conf: |
+    server {
+        listen 80;
+        server_name localhost;
+        location / {
+            root /usr/share/nginx/html;
+            index index.html;
+        }
+    }
+
+  app.properties: |
+    environment=desarrollo
+    log.level=debug
+    max.connections=100
+    db.host=mysql-service

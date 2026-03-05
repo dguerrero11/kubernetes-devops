@@ -1,0 +1,57 @@
+# ============================================================
+# INGRESS - Enrutamiento básico por hostname
+# ============================================================
+# Ingress permite:
+#   ✓ Exponer múltiples servicios con un solo NodePort/IP
+#   ✓ Enrutar por hostname (virtual hosting)
+#   ✓ Enrutar por path URL
+#   ✓ Terminar TLS/HTTPS
+#
+# Sin Ingress → necesitas un NodePort por cada aplicación
+# Con Ingress → un solo punto de entrada, enruta por hostname/path
+#
+# PREREQUISITO:
+#   1. NGINX Ingress Controller instalado (ver 00-instalar-nginx-ingress.md)
+#   2. Obtener el puerto NodePort del Ingress Controller:
+#      kubectl get svc ingress-nginx-controller -n ingress-nginx
+#
+# SETUP PARA ESTA DEMO:
+#   Primero crear los deployments y services de backend:
+#   kubectl apply -f ../04-deployments/01-deployment-basico.yaml
+#   kubectl apply -f ../05-services/01-service-clusterip.yaml
+#
+# COMANDOS ÚTILES:
+#   kubectl apply -f 01-ingress-basico.yaml
+#   kubectl get ingress
+#   kubectl get ing
+#   kubectl describe ingress nginx-ingress-basico
+#
+#   # Probar con nip.io (reemplaza 30080 con tu puerto NodePort real):
+#   curl http://nginx.192.168.109.200.nip.io:30080
+#   # O desde el navegador:
+#   # http://nginx.192.168.109.200.nip.io:30080
+# ============================================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx-ingress-basico
+  annotations:
+    # Indica qué Ingress Controller debe procesar esta regla
+    kubernetes.io/ingress.class: nginx
+    # Redirigir HTTP → HTTPS automáticamente (desactivado para la demo)
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx           # Para clusters más modernos (v1.18+)
+
+  rules:
+    - host: nginx.192.168.109.200.nip.io   # El hostname que enruta a este servicio
+      http:
+        paths:
+          - path: /                         # Todas las rutas que empiecen con /
+            pathType: Prefix
+            backend:
+              service:
+                name: nginx-clusterip       # Service al que enviar el tráfico
+                port:
+                  number: 80

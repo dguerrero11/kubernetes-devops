@@ -1,0 +1,72 @@
+# ============================================================
+# DEPLOYMENT CON ESTRATEGIA DE ACTUALIZACIÓN
+# ============================================================
+# Kubernetes soporta dos estrategias de actualización:
+#
+# 1. RollingUpdate (por defecto) → actualiza Pods de a poco, sin downtime
+#    - maxSurge: cuántos Pods EXTRA puede crear durante la actualización
+#    - maxUnavailable: cuántos Pods pueden estar NO disponibles durante actualización
+#
+# 2. Recreate → elimina TODOS los Pods y crea los nuevos (hay downtime)
+#    - Solo usar cuando la app NO soporta múltiples versiones simultáneas
+#
+# DEMO DE ROLLING UPDATE:
+#   kubectl apply -f 02-deployment-rolling-update.yaml
+#   kubectl get pods -w     (en otra terminal, ver el rolling update)
+#
+#   # Actualizar imagen para disparar el rolling update:
+#   kubectl set image deployment/nginx-rolling nginx=nginx:1.26
+#   kubectl rollout status deployment/nginx-rolling
+#
+#   # Ver historial:
+#   kubectl rollout history deployment/nginx-rolling
+#
+#   # Rollback a la versión anterior:
+#   kubectl rollout undo deployment/nginx-rolling
+#
+#   # Rollback a una versión específica:
+#   kubectl rollout undo deployment/nginx-rolling --to-revision=1
+#
+#   # Pausar y reanudar un rollout:
+#   kubectl rollout pause deployment/nginx-rolling
+#   kubectl rollout resume deployment/nginx-rolling
+# ============================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-rolling
+  labels:
+    app: nginx-rolling
+  annotations:
+    kubernetes.io/change-cause: "Versión inicial con nginx 1.25"   # Se guarda en el historial
+spec:
+  replicas: 4
+
+  selector:
+    matchLabels:
+      app: nginx-rolling
+
+  strategy:
+    type: RollingUpdate         # Actualización gradual (sin downtime)
+    rollingUpdate:
+      maxSurge: 1               # Máximo 1 Pod extra durante la actualización (4+1=5 máximo)
+      maxUnavailable: 0         # Nunca dejar Pods no disponibles (0 downtime)
+
+  template:
+    metadata:
+      labels:
+        app: nginx-rolling
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"

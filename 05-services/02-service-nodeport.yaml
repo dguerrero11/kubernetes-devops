@@ -1,0 +1,58 @@
+# ============================================================
+# SERVICE - NodePort
+# ============================================================
+# NodePort expone la aplicación al EXTERIOR del cluster.
+# Abre un puerto en CADA NODO del cluster (en todos los nodos).
+# Se puede acceder desde fuera con: http://<IP-de-cualquier-nodo>:<nodePort>
+#
+# Rango de puertos NodePort: 30000 - 32767
+#
+# Flujo del tráfico:
+#   Usuario → <IP-nodo>:30080 → Service → Pod:80
+#
+# Con tu cluster:
+#   http://192.168.109.200:30080  (master)
+#   http://192.168.109.201:30080  (worker01)
+#   http://192.168.109.202:30080  (worker02)
+#   ¡Cualquiera de los tres funciona!
+#
+# Ventajas:
+#   + Acceso externo sin LoadBalancer
+#   + Útil para desarrollo y demos
+#
+# Desventajas:
+#   - Puertos limitados (30000-32767)
+#   - Expone un puerto en TODOS los nodos
+#   - No es ideal para producción
+#
+# COMANDOS ÚTILES:
+#   kubectl apply -f ../04-deployments/01-deployment-basico.yaml
+#   kubectl apply -f 02-service-nodeport.yaml
+#
+#   kubectl get svc nginx-nodeport
+#   kubectl describe svc nginx-nodeport
+#
+#   # Probar desde fuera del cluster:
+#   curl http://192.168.109.200:30080
+#   curl http://192.168.109.201:30080
+#   curl http://192.168.109.202:30080
+# ============================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-nodeport
+  labels:
+    app: nginx
+spec:
+  type: NodePort              # Expone el servicio en un puerto de cada nodo
+
+  selector:
+    app: nginx                # Pods a los que enviar tráfico
+
+  ports:
+    - protocol: TCP
+      port: 80                # Puerto del Service (interno al cluster)
+      targetPort: 80          # Puerto del contenedor
+      nodePort: 30080         # Puerto externo en los nodos (30000-32767)
+                              # Si se omite, Kubernetes asigna uno automáticamente

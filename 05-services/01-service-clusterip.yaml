@@ -1,0 +1,51 @@
+# ============================================================
+# SERVICE - ClusterIP (tipo por defecto)
+# ============================================================
+# Un Service es la forma de exponer una aplicación en Kubernetes.
+# Resuelve el problema: los Pods tienen IPs DINÁMICAS (cambian al reiniciarse).
+# El Service tiene una IP ESTABLE y distribuye el tráfico entre los Pods.
+#
+# ClusterIP:
+#   - Solo accesible DENTRO del cluster
+#   - IP virtual estable dentro del cluster
+#   - Usa el mecanismo de DNS de Kubernetes: <nombre-service>.<namespace>.svc.cluster.local
+#   - Perfecto para comunicación entre microservicios
+#
+# ¿Cómo sabe el Service a qué Pods enviar tráfico?
+#   → El "selector" del Service busca Pods con ese label
+#   → SOLO envía tráfico a Pods con readinessProbe OK
+#
+# COMANDOS ÚTILES:
+#   kubectl apply -f ../04-deployments/01-deployment-basico.yaml  (primero el deployment)
+#   kubectl apply -f 01-service-clusterip.yaml
+#
+#   kubectl get services
+#   kubectl get svc
+#   kubectl describe svc nginx-clusterip
+#
+#   # Probar desde dentro del cluster:
+#   kubectl run test-curl --image=curlimages/curl --rm -it --restart=Never -- \
+#     curl http://nginx-clusterip
+#
+#   # El DNS funciona así:
+#   # nginx-clusterip                    (mismo namespace)
+#   # nginx-clusterip.default            (con namespace)
+#   # nginx-clusterip.default.svc.cluster.local  (FQDN completo)
+# ============================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-clusterip
+  labels:
+    app: nginx
+spec:
+  type: ClusterIP             # Solo accesible dentro del cluster (valor por defecto)
+
+  selector:
+    app: nginx                # Envía tráfico a Pods con este label
+
+  ports:
+    - protocol: TCP
+      port: 80                # Puerto del Service (el que usan otros Pods para conectarse)
+      targetPort: 80          # Puerto del contenedor al que redirige el tráfico

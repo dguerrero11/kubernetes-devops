@@ -1,0 +1,33 @@
+# ============================================================
+# POD DENTRO DE UN NAMESPACE
+# ============================================================
+# Para colocar un recurso en un namespace específico hay dos formas:
+#
+# 1. En el manifiesto YAML → metadata.namespace (recomendado)
+# 2. Con flag en kubectl  → kubectl apply -f archivo.yaml -n devops-demo
+#
+# IMPORTANTE: Crear primero el namespace (01-namespace.yaml)
+#   kubectl apply -f 01-namespace.yaml
+#   kubectl apply -f 02-pod-en-namespace.yaml
+#
+# COMANDOS ÚTILES:
+#   kubectl get pods -n devops-demo
+#   kubectl describe pod nginx-en-ns -n devops-demo
+#   kubectl logs nginx-en-ns -n devops-demo
+#   kubectl exec -it nginx-en-ns -n devops-demo -- bash
+#   kubectl delete pod nginx-en-ns -n devops-demo
+# ============================================================
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-en-ns
+  namespace: devops-demo    # <-- Aquí se especifica el namespace
+  labels:
+    app: nginx
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.25
+      ports:
+        - containerPort: 80

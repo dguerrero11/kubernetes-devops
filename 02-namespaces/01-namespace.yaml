@@ -1,0 +1,40 @@
+# ============================================================
+# NAMESPACES
+# ============================================================
+# Un Namespace es una partición virtual del cluster.
+# Permite separar recursos por:
+#   - Equipo: frontend, backend, data
+#   - Entorno: dev, staging, produccion
+#   - Proyecto: proyecto-a, proyecto-b
+#
+# Namespaces predeterminados de Kubernetes:
+#   default         → donde van los recursos si no se especifica NS
+#   kube-system     → componentes internos del cluster (coredns, kube-proxy...)
+#   kube-public     → recursos públicos, raramente usado
+#   kube-node-lease → heartbeats de los nodos
+#
+# Los recursos en distintos namespaces están AISLADOS a nivel de:
+#   - Nombres (un pod "web" puede existir en dev Y en prod)
+#   - Permisos (RBAC por namespace)
+#   - Quotas (límites de recursos por namespace)
+#
+# NOTA: Algunos recursos son GLOBALES (no tienen namespace):
+#   Nodes, PersistentVolumes, ClusterRoles, StorageClasses
+#
+# COMANDOS ÚTILES:
+#   kubectl apply -f 01-namespace.yaml
+#   kubectl get namespaces
+#   kubectl get ns
+#   kubectl get pods -n devops-demo
+#   kubectl get all -n devops-demo
+#   kubectl config set-context --current --namespace=devops-demo  (cambia el NS por defecto)
+#   kubectl delete ns devops-demo  (¡borra TODO lo que hay dentro!)
+# ============================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devops-demo
+  labels:
+    env: desarrollo
+    equipo: devops

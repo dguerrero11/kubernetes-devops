@@ -1,0 +1,41 @@
+# ============================================================
+# POD CON RECURSOS (requests y limits)
+# ============================================================
+# requests: lo que el Pod NECESITA garantizado
+#   - El scheduler usa esto para decidir en qué nodo colocar el Pod
+#
+# limits: lo máximo que puede CONSUMIR
+#   - Si supera el CPU limit → throttling (lentitud)
+#   - Si supera el Memory limit → OOMKilled (reinicio del contenedor)
+#
+# Unidades:
+#   CPU: 1 = 1 vCPU | 500m = 0.5 vCPU | 100m = 0.1 vCPU
+#   Memoria: Ki, Mi, Gi (base 2) | K, M, G (base 10)
+#
+# COMANDOS ÚTILES:
+#   kubectl apply -f 03-pod-recursos.yaml
+#   kubectl describe pod nginx-recursos
+#   kubectl top pod nginx-recursos   (requiere metrics-server)
+#   kubectl top nodes
+# ============================================================
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-recursos
+  labels:
+    app: nginx
+    demo: recursos
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.25
+      ports:
+        - containerPort: 80
+      resources:
+        requests:           # Garantizado: el scheduler necesita este nodo disponible
+          memory: "64Mi"    # 64 Mebibytes garantizados
+          cpu: "100m"       # 0.1 vCPU garantizado
+        limits:             # Máximo permitido
+          memory: "128Mi"   # Si supera esto → OOMKilled
+          cpu: "200m"       # Si supera esto → throttling

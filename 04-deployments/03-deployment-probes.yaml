@@ -1,0 +1,80 @@
+# ============================================================
+# DEPLOYMENT CON HEALTH CHECKS (Probes)
+# ============================================================
+# Kubernetes usa Probes para saber el estado de un contenedor:
+#
+# livenessProbe  → ¿Está vivo el contenedor?
+#   - Si falla → Kubernetes REINICIA el contenedor
+#   - Detecta: deadlocks, estados colgados
+#
+# readinessProbe → ¿Está listo para recibir tráfico?
+#   - Si falla → Kubernetes saca el Pod del Service (no le llega tráfico)
+#   - Detecta: app en calentamiento, BD no conectada aún
+#
+# startupProbe   → ¿Ya terminó de iniciar?
+#   - Se usa para apps lentas en arrancar
+#   - Deshabilita liveness/readiness hasta que pase
+#
+# Tipos de verificación:
+#   httpGet      → hace GET al endpoint, espera 200-399
+#   tcpSocket    → intenta conectar al puerto TCP
+#   exec         → ejecuta un comando, espera exit code 0
+#
+# COMANDOS PARA DEMOSTRAR:
+#   kubectl apply -f 03-deployment-probes.yaml
+#   kubectl get pods
+#   kubectl describe pod <nombre>   (ver Events con resultados de probes)
+#
+#   # Simular fallo de liveness (el contenedor se reinicia):
+#   kubectl exec -it <pod-name> -- nginx -s stop
+#   kubectl get pods -w   (ver RESTARTS aumentar)
+# ============================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-probes
+  labels:
+    app: nginx-probes
+spec:
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: nginx-probes
+
+  template:
+    metadata:
+      labels:
+        app: nginx-probes
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+
+          # Probe de LIVENESS: ¿sigue vivo el proceso?
+          livenessProbe:
+            httpGet:
+              path: /           # Endpoint a consultar
+              port: 80          # Puerto del contenedor
+            initialDelaySeconds: 10   # Esperar 10s antes de la primera verificación
+            periodSeconds: 15         # Verificar cada 15 segundos
+            failureThreshold: 3       # Reiniciar después de 3 fallos consecutivos
+
+          # Probe de READINESS: ¿listo para recibir tráfico?
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5    # Empezar a verificar después de 5s
+            periodSeconds: 10         # Verificar cada 10 segundos
+            failureThreshold: 3       # Sacar del Service después de 3 fallos

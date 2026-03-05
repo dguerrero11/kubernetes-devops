@@ -1,0 +1,31 @@
+# ============================================================
+# POD BÁSICO
+# ============================================================
+# Un Pod es la unidad mínima desplegable en Kubernetes.
+# Contiene uno o más contenedores que comparten:
+#   - La misma red (mismo IP)
+#   - El mismo almacenamiento (volumes)
+#   - El mismo ciclo de vida
+#
+# COMANDOS ÚTILES:
+#   kubectl apply -f 01-pod-basico.yaml
+#   kubectl get pods
+#   kubectl get pods -o wide
+#   kubectl describe pod nginx-basico
+#   kubectl logs nginx-basico
+#   kubectl exec -it nginx-basico -- bash
+#   kubectl delete -f 01-pod-basico.yaml
+# ============================================================
+
+apiVersion: v1        # La versión de la API de Kubernetes para este recurso
+kind: Pod             # El tipo de recurso que vamos a crear
+metadata:
+  name: nginx-basico  # Nombre único del Pod dentro del namespace
+  labels:
+    app: nginx        # Etiquetas: clave-valor para identificar y agrupar recursos
+spec:
+  containers:
+    - name: nginx             # Nombre del contenedor dentro del Pod
+      image: nginx:1.25       # Imagen de Docker a usar
+      ports:
+        - containerPort: 80   # Puerto que expone el contenedor (solo informativo)

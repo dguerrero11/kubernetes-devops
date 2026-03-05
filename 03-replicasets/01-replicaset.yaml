@@ -1,0 +1,64 @@
+# ============================================================
+# REPLICASET
+# ============================================================
+# Un ReplicaSet garantiza que siempre haya N réplicas de un Pod corriendo.
+# Si un Pod muere → ReplicaSet crea uno nuevo automáticamente.
+# Si hay más Pods de los deseados → los elimina.
+#
+# ¿Cómo sabe el ReplicaSet cuáles Pods controla?
+#   → Usa el "selector" para encontrar Pods con esos labels.
+#   → IMPORTANTE: selector debe coincidir con template.metadata.labels
+#
+# NOTA: En la práctica casi NUNCA se crea un ReplicaSet directamente.
+#       Se usa un Deployment, que internamente crea y gestiona el ReplicaSet.
+#       Pero es importante entenderlo primero.
+#
+# COMANDOS PARA DEMOSTRAR AUTO-HEALING:
+#   kubectl apply -f 01-replicaset.yaml
+#   kubectl get rs
+#   kubectl get pods
+#   kubectl get pods -l app=nginx-rs    # ver solo los pods del RS
+#
+#   # Eliminar un Pod y ver cómo el RS crea uno nuevo:
+#   kubectl delete pod <nombre-del-pod>
+#   kubectl get pods -w                 # -w = watch (modo tiempo real)
+#
+#   # Escalar manualmente:
+#   kubectl scale rs nginx-replicaset --replicas=5
+#   kubectl get pods
+#   kubectl scale rs nginx-replicaset --replicas=2
+#
+#   kubectl describe rs nginx-replicaset
+#   kubectl delete -f 01-replicaset.yaml
+# ============================================================
+
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: nginx-replicaset
+  labels:
+    app: nginx-rs
+spec:
+  replicas: 3                   # Número de Pods que deben estar corriendo SIEMPRE
+
+  selector:                     # El RS busca Pods con ESTOS labels para controlarlos
+    matchLabels:
+      app: nginx-rs             # Debe coincidir exactamente con template.metadata.labels
+
+  template:                     # Plantilla para crear nuevos Pods (cuando falten)
+    metadata:
+      labels:
+        app: nginx-rs           # DEBE ser igual al selector de arriba
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"

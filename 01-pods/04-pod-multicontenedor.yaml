@@ -1,0 +1,63 @@
+# ============================================================
+# POD MULTICONTENEDOR (patrón Sidecar)
+# ============================================================
+# Un Pod puede tener MÚLTIPLES contenedores que:
+#   - Comparten la misma IP (se comunican via localhost)
+#   - Pueden compartir volúmenes
+#   - Se inician y detienen juntos
+#
+# Patrones comunes:
+#   Sidecar   → asiste al contenedor principal (logs, sync, proxy)
+#   Ambassador → proxy para servicios externos
+#   Adapter   → normaliza la salida del contenedor principal
+#
+# En este ejemplo:
+#   - nginx sirve contenido desde /usr/share/nginx/html
+#   - Un contenedor "generador" escribe en ese mismo directorio
+#   - Ambos comparten el volumen "html-compartido"
+#
+# COMANDOS ÚTILES:
+#   kubectl apply -f 04-pod-multicontenedor.yaml
+#   kubectl get pods
+#   kubectl describe pod nginx-sidecar
+#   kubectl logs nginx-sidecar -c nginx          # logs del contenedor nginx
+#   kubectl logs nginx-sidecar -c generador-html # logs del sidecar
+#   kubectl exec -it nginx-sidecar -c nginx -- bash
+#   kubectl exec -it nginx-sidecar -c generador-html -- sh
+# ============================================================
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-sidecar
+  labels:
+    app: nginx
+    patron: sidecar
+spec:
+  volumes:
+    - name: html-compartido   # Volumen que comparten ambos contenedores
+      emptyDir: {}            # emptyDir: directorio temporal en el nodo, vive mientras el Pod exista
+
+  containers:
+    # ---- Contenedor principal ----
+    - name: nginx
+      image: nginx:1.25
+      ports:
+        - containerPort: 80
+      volumeMounts:
+        - name: html-compartido
+          mountPath: /usr/share/nginx/html   # Nginx sirve archivos desde aquí
+
+    # ---- Contenedor Sidecar ----
+    - name: generador-html
+      image: busybox:1.36
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          while true; do
+            echo "<h1>Pagina generada: $(date)</h1>" > /datos/index.html
+            sleep 5
+          done
+      volumeMounts:
+        - name: html-compartido
+          mountPath: /datos                  # El sidecar escribe aquí (mismo volumen)

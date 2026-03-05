@@ -1,0 +1,40 @@
+# ============================================================
+# POD CON LABELS Y ANNOTATIONS
+# ============================================================
+# Labels: etiquetas de clave-valor para SELECCIONAR y AGRUPAR recursos
+#   - Los usa kubectl para filtrar: kubectl get pods -l app=web
+#   - Los usan Services y ReplicaSets para seleccionar Pods
+#
+# Annotations: metadatos adicionales, NO se usan para selección
+#   - Información para herramientas externas (CI/CD, monitoreo)
+#   - Documentación del recurso
+#
+# COMANDOS ÚTILES:
+#   kubectl apply -f 02-pod-labels-annotations.yaml
+#   kubectl get pods --show-labels
+#   kubectl get pods -l app=web
+#   kubectl get pods -l env=desarrollo,app=web
+#   kubectl label pod nginx-etiquetado version=v2
+#   kubectl annotate pod nginx-etiquetado owner=equipo-backend
+# ============================================================
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: nginx-etiquetado
+  labels:
+    app: web            # Identifica la aplicación
+    env: desarrollo     # Entorno: desarrollo / staging / produccion
+    version: v1         # Versión de la aplicación
+    tier: frontend      # Capa: frontend / backend / database
+  annotations:
+    description: "Pod de demostración para la clase de Kubernetes"
+    owner: "equipo-devops"
+    contact: "devops@empresa.com"
+    git-repo: "https://github.com/dguerrero11/kubernetes-devops"
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.25
+      ports:
+        - containerPort: 80

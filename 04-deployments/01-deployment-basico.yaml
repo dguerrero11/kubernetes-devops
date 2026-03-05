@@ -1,0 +1,70 @@
+# ============================================================
+# DEPLOYMENT BÁSICO
+# ============================================================
+# Un Deployment es el recurso más usado en Kubernetes.
+# Gestiona automáticamente:
+#   ✓ ReplicaSets (y por ende, Pods)
+#   ✓ Actualizaciones sin downtime (rolling update)
+#   ✓ Rollback a versiones anteriores
+#   ✓ Historial de cambios
+#
+# Jerarquía:  Deployment → ReplicaSet → Pods
+#
+# COMANDOS ÚTILES:
+#   kubectl apply -f 01-deployment-basico.yaml
+#   kubectl get deployments
+#   kubectl get deploy
+#   kubectl get all
+#   kubectl describe deployment nginx-deploy
+#   kubectl get rs   (ver el ReplicaSet que creó el Deployment)
+#   kubectl get pods
+#
+#   # Escalar:
+#   kubectl scale deployment nginx-deploy --replicas=5
+#
+#   # Ver en tiempo real:
+#   kubectl get pods -w
+#
+#   # Actualizar imagen (simula un rollout):
+#   kubectl set image deployment/nginx-deploy nginx=nginx:1.26
+#   kubectl rollout status deployment/nginx-deploy
+#
+#   # Ver historial:
+#   kubectl rollout history deployment/nginx-deploy
+#
+#   # Hacer rollback:
+#   kubectl rollout undo deployment/nginx-deploy
+#
+#   kubectl delete -f 01-deployment-basico.yaml
+# ============================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deploy
+  labels:
+    app: nginx
+spec:
+  replicas: 3                   # Cantidad de Pods
+
+  selector:
+    matchLabels:
+      app: nginx                # Selecciona Pods con este label
+
+  template:                     # Plantilla del Pod
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25     # Imagen a usar
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"

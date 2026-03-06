@@ -1,0 +1,43 @@
+# ============================================================
+# CONFIGMAP: Dashboard Provider de Grafana
+# ============================================================
+# El "provisioning" de Grafana permite cargar dashboards automáticamente
+# desde archivos JSON al iniciar, sin pasar por la UI.
+#
+# Este ConfigMap le dice a Grafana:
+#   "Escanea /grafana-dashboards/ y carga todos los archivos .json como dashboards"
+#
+# Ventajas del provisioning:
+#   ✓ Dashboards versionados en Git
+#   ✓ Se cargan automáticamente al iniciar Grafana
+#   ✓ updateIntervalSeconds → recarga automática si cambia el ConfigMap
+#   ✓ editable: true → se pueden editar en la UI y guardar en el PVC
+#
+# Se monta en:
+#   /etc/grafana/provisioning/dashboards/provider.yaml
+#
+# Los archivos JSON de dashboards se montan en:
+#   /grafana-dashboards/   (fuera del PVC, no hay conflicto)
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: monitoring
+  labels:
+    app: grafana
+data:
+  provider.yaml: |
+    apiVersion: 1
+    providers:
+      - name: kubernetes-class
+        orgId: 1
+        folder: "Kubernetes Class"       # Carpeta en la UI de Grafana
+        folderUid: "kubernetes-class"
+        type: file
+        disableDeletion: false           # Se pueden borrar desde la UI
+        editable: true                   # Se pueden editar desde la UI
+        updateIntervalSeconds: 30        # Recarga automática cada 30s
+        options:
+          path: /grafana-dashboards      # Directorio donde buscar los JSON

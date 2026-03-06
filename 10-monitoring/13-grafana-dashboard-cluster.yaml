@@ -1,0 +1,274 @@
+# ============================================================
+# CONFIGMAP: Dashboard "Prometheus - Estado del Cluster"
+# ============================================================
+# Dashboard con métricas internas de Prometheus y estado general.
+# Paneles incluidos:
+#   - Targets activos / caídos (stats)
+#   - Uptime de Prometheus (stat)
+#   - Duración de scraping por job (timeseries)
+#   - Muestras ingestadas por segundo (timeseries)
+#   - Tamaño de la TSDB (gauge)
+#   - Memoria usada por Prometheus (timeseries)
+#
+# Se monta en /grafana-dashboards/cluster.json
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-cluster
+  namespace: monitoring
+  labels:
+    app: grafana
+data:
+  cluster.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "refresh": "30s",
+      "schemaVersion": 38,
+      "tags": ["kubernetes", "prometheus", "cluster"],
+      "time": {"from": "now-1h", "to": "now"},
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Prometheus - Estado del Cluster",
+      "uid": "cluster-overview",
+      "version": 1,
+      "panels": [
+
+        {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+         "id": 10, "title": "Estado General", "type": "row"},
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "thresholds": {"mode": "absolute", "steps": [
+                {"color": "red", "value": null},
+                {"color": "green", "value": 1}
+              ]},
+              "mappings": [], "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 1},
+          "id": 1,
+          "options": {"colorMode": "background", "graphMode": "none",
+                      "justifyMode": "center", "orientation": "auto",
+                      "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "count(up == 1)",
+            "legendFormat": "Targets activos", "refId": "A"
+          }],
+          "title": "Targets Activos",
+          "type": "stat"
+        },
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "thresholds": {"mode": "absolute", "steps": [
+                {"color": "green", "value": null},
+                {"color": "red", "value": 1}
+              ]},
+              "mappings": [], "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 1},
+          "id": 2,
+          "options": {"colorMode": "background", "graphMode": "none",
+                      "justifyMode": "center", "orientation": "auto",
+                      "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "count(up == 0) OR vector(0)",
+            "legendFormat": "Targets caídos", "refId": "A"
+          }],
+          "title": "Targets Caídos",
+          "type": "stat"
+        },
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "thresholds": {"mode": "absolute", "steps": [
+                {"color": "green", "value": null}
+              ]},
+              "mappings": [], "unit": "s"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 1},
+          "id": 3,
+          "options": {"colorMode": "background", "graphMode": "none",
+                      "justifyMode": "center", "orientation": "auto",
+                      "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "time() - process_start_time_seconds{job=\"prometheus\"}",
+            "legendFormat": "Uptime", "refId": "A"
+          }],
+          "title": "Uptime Prometheus",
+          "type": "stat"
+        },
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "thresholds": {"mode": "absolute", "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 256},
+                {"color": "red", "value": 400}
+              ]},
+              "unit": "decmbytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 1},
+          "id": 4,
+          "options": {"colorMode": "background", "graphMode": "area",
+                      "justifyMode": "center", "orientation": "auto",
+                      "reduceOptions": {"calcs": ["lastNotNull"]}},
+          "targets": [{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "process_resident_memory_bytes{job=\"prometheus\"} / 1024 / 1024",
+            "legendFormat": "Memoria", "refId": "A"
+          }],
+          "title": "Memoria Prometheus (MB)",
+          "type": "stat"
+        },
+
+        {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5},
+         "id": 20, "title": "Rendimiento de Scraping", "type": "row"},
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1,
+                         "pointSize": 5, "showPoints": "never", "spanNulls": false},
+              "unit": "s"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
+          "id": 5,
+          "options": {
+            "legend": {"calcs": ["mean", "max"], "displayMode": "table",
+                       "placement": "bottom", "showLegend": true},
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "prometheus_target_scrape_duration_seconds",
+            "legendFormat": "{{job}} - {{instance}}", "refId": "A"
+          }],
+          "title": "Duración de Scraping por Job (s)",
+          "type": "timeseries"
+        },
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1,
+                         "pointSize": 5, "showPoints": "never", "spanNulls": false},
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
+          "id": 6,
+          "options": {
+            "legend": {"calcs": ["mean", "max"], "displayMode": "table",
+                       "placement": "bottom", "showLegend": true},
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "rate(prometheus_tsdb_head_samples_appended_total[5m])",
+            "legendFormat": "Muestras/s", "refId": "A"
+          }],
+          "title": "Muestras Ingestadas por Segundo",
+          "type": "timeseries"
+        },
+
+        {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+         "id": 30, "title": "Almacenamiento TSDB", "type": "row"},
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "thresholds": {"mode": "absolute", "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 3000},
+                {"color": "red", "value": 7000}
+              ]},
+              "unit": "decmbytes", "min": 0
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 15},
+          "id": 7,
+          "options": {"orientation": "auto",
+                      "reduceOptions": {"calcs": ["lastNotNull"]},
+                      "showThresholdLabels": false, "showThresholdMarkers": true},
+          "targets": [{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "prometheus_tsdb_head_chunks_storage_size_bytes / 1024 / 1024",
+            "legendFormat": "TSDB size (MB)", "refId": "A"
+          }],
+          "title": "Tamaño TSDB en Memoria (MB)",
+          "type": "gauge"
+        },
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1,
+                         "pointSize": 5, "showPoints": "never", "spanNulls": false},
+              "unit": "decmbytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 16, "x": 8, "y": 15},
+          "id": 8,
+          "options": {
+            "legend": {"calcs": ["mean", "max", "lastNotNull"],
+                       "displayMode": "table", "placement": "bottom", "showLegend": true},
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "process_resident_memory_bytes{job=\"prometheus\"} / 1024 / 1024",
+            "legendFormat": "RSS Prometheus", "refId": "A"
+          },{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "process_virtual_memory_bytes{job=\"prometheus\"} / 1024 / 1024",
+            "legendFormat": "Virtual Memory", "refId": "B"
+          }],
+          "title": "Uso de Memoria - Proceso Prometheus (MB)",
+          "type": "timeseries"
+        }
+
+      ]
+    }

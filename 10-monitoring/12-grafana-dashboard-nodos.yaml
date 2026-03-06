@@ -1,0 +1,205 @@
+# ============================================================
+# CONFIGMAP: Dashboard "Nodos - Métricas del Sistema"
+# ============================================================
+# Dashboard con métricas de Node Exporter.
+# Paneles incluidos:
+#   - CPU Usage % por nodo (timeseries)
+#   - Memoria Usada % (gauge por nodo)
+#   - Memoria Disponible GB (timeseries)
+#   - Disco Usado % (gauge por nodo)
+#   - Red: Bytes recibidos/enviados (timeseries)
+#
+# Se monta en /grafana-dashboards/nodos.json
+# Grafana lo carga automáticamente gracias al dashboard provider.
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-nodos
+  namespace: monitoring
+  labels:
+    app: grafana
+data:
+  nodos.json: |
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "id": null,
+      "links": [],
+      "refresh": "30s",
+      "schemaVersion": 38,
+      "tags": ["kubernetes", "nodes", "node-exporter"],
+      "time": {"from": "now-1h", "to": "now"},
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "Nodos - Métricas del Sistema",
+      "uid": "nodos-overview",
+      "version": 1,
+      "panels": [
+
+        {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+         "id": 10, "title": "CPU", "type": "row"},
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2,
+                         "pointSize": 5, "showPoints": "never", "spanNulls": false},
+              "unit": "percent", "min": 0, "max": 100,
+              "thresholds": {"mode": "absolute", "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 70},
+                {"color": "red", "value": 90}
+              ]}
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 24, "x": 0, "y": 1},
+          "id": 1,
+          "options": {
+            "legend": {"calcs": ["mean", "max", "lastNotNull"],
+                       "displayMode": "table", "placement": "bottom", "showLegend": true},
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "100 - (avg by(instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+            "legendFormat": "{{instance}}", "refId": "A"
+          }],
+          "title": "CPU Usage %",
+          "type": "timeseries"
+        },
+
+        {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 9},
+         "id": 20, "title": "Memoria", "type": "row"},
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "thresholds": {"mode": "absolute", "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 70},
+                {"color": "red", "value": 90}
+              ]},
+              "unit": "percent", "min": 0, "max": 100,
+              "mappings": []
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 10},
+          "id": 2,
+          "options": {"orientation": "auto",
+                      "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+                      "showThresholdLabels": false, "showThresholdMarkers": true},
+          "targets": [{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100",
+            "legendFormat": "{{instance}}", "refId": "A"
+          }],
+          "title": "Memoria Usada %",
+          "type": "gauge"
+        },
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {"drawStyle": "line", "fillOpacity": 15, "lineWidth": 2,
+                         "pointSize": 5, "showPoints": "never", "spanNulls": false},
+              "unit": "decgbytes"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 16, "x": 8, "y": 10},
+          "id": 3,
+          "options": {
+            "legend": {"calcs": ["mean", "min", "lastNotNull"],
+                       "displayMode": "table", "placement": "bottom", "showLegend": true},
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "node_memory_MemAvailable_bytes / 1024 / 1024 / 1024",
+            "legendFormat": "Disponible - {{instance}}", "refId": "A"
+          },{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "node_memory_MemTotal_bytes / 1024 / 1024 / 1024",
+            "legendFormat": "Total - {{instance}}", "refId": "B"
+          }],
+          "title": "Memoria Disponible vs Total (GB)",
+          "type": "timeseries"
+        },
+
+        {"collapsed": false, "gridPos": {"h": 1, "w": 24, "x": 0, "y": 18},
+         "id": 30, "title": "Disco y Red", "type": "row"},
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "thresholds"},
+              "thresholds": {"mode": "absolute", "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 70},
+                {"color": "red", "value": 85}
+              ]},
+              "unit": "percent", "min": 0, "max": 100,
+              "mappings": []
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 8, "x": 0, "y": 19},
+          "id": 4,
+          "options": {"orientation": "auto",
+                      "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+                      "showThresholdLabels": false, "showThresholdMarkers": true},
+          "targets": [{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "(1 - (node_filesystem_avail_bytes{mountpoint=\"/\",fstype!=\"tmpfs\"} / node_filesystem_size_bytes{mountpoint=\"/\",fstype!=\"tmpfs\"})) * 100",
+            "legendFormat": "{{instance}}", "refId": "A"
+          }],
+          "title": "Disco Usado % (raíz /)",
+          "type": "gauge"
+        },
+
+        {
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "fieldConfig": {
+            "defaults": {
+              "color": {"mode": "palette-classic"},
+              "custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 1,
+                         "pointSize": 5, "showPoints": "never", "spanNulls": false},
+              "unit": "Bps"
+            },
+            "overrides": []
+          },
+          "gridPos": {"h": 8, "w": 16, "x": 8, "y": 19},
+          "id": 5,
+          "options": {
+            "legend": {"calcs": ["mean", "max"], "displayMode": "table",
+                       "placement": "bottom", "showLegend": true},
+            "tooltip": {"mode": "multi", "sort": "desc"}
+          },
+          "targets": [{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "rate(node_network_receive_bytes_total{device!=\"lo\"}[5m])",
+            "legendFormat": "RX {{instance}} {{device}}", "refId": "A"
+          },{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "rate(node_network_transmit_bytes_total{device!=\"lo\"}[5m])",
+            "legendFormat": "TX {{instance}} {{device}}", "refId": "B"
+          }],
+          "title": "Red - Bytes/s (RX = recibido, TX = enviado)",
+          "type": "timeseries"
+        }
+
+      ]
+    }

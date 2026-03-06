@@ -1,19 +1,25 @@
 # ============================================================
 # GRAFANA - Deployment + Service
 # ============================================================
-# Grafana usa tres fuentes de configuración (ver cómo se combinan):
+# Grafana usa CINCO fuentes de configuración (ver cómo se combinan):
 #
 #   1. Secret "grafana-credentials"
 #      → GF_SECURITY_ADMIN_USER y GF_SECURITY_ADMIN_PASSWORD
-#      → Credenciales de acceso a la UI
 #
 #   2. ConfigMap "grafana-datasource"
-#      → Montado en /etc/grafana/provisioning/datasources/
+#      → /etc/grafana/provisioning/datasources/
 #      → Conecta automáticamente con Prometheus al iniciar
 #
 #   3. PVC "pvc-grafana"
-#      → Montado en /var/lib/grafana
-#      → Persiste dashboards, plugins y la base de datos interna
+#      → /var/lib/grafana  (datos, SQLite, plugins)
+#
+#   4. ConfigMap "grafana-dashboard-provider"
+#      → /etc/grafana/provisioning/dashboards/
+#      → Le dice a Grafana dónde buscar los JSON de dashboards
+#
+#   5. ConfigMaps "grafana-dashboard-nodos" + "grafana-dashboard-cluster"
+#      → /grafana-dashboards/  (projected volume: combina los dos en un dir)
+#      → Los archivos JSON de los dashboards preconfigurados
 #
 # Acceso:
 #   Internamente: http://grafana-svc:3000 (ClusterIP)
@@ -57,6 +63,18 @@ spec:
           configMap:
             name: grafana-datasource      # Datasource de Prometheus (auto-provisioning)
 
+        - name: grafana-dashboard-provider
+          configMap:
+            name: grafana-dashboard-provider  # Le dice a Grafana dónde están los JSON
+
+        - name: grafana-dashboards
+          projected:                          # Combina múltiples ConfigMaps en un solo directorio
+            sources:
+              - configMap:
+                  name: grafana-dashboard-nodos    # nodos.json
+              - configMap:
+                  name: grafana-dashboard-cluster  # cluster.json
+
       containers:
         - name: grafana
           image: grafana/grafana:10.2.3
@@ -90,7 +108,13 @@ spec:
               mountPath: /var/lib/grafana         # Datos persistentes (NFS)
 
             - name: grafana-datasource
-              mountPath: /etc/grafana/provisioning/datasources  # Auto-provisioning
+              mountPath: /etc/grafana/provisioning/datasources  # Auto-provisioning datasource
+
+            - name: grafana-dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards   # Auto-provisioning dashboards
+
+            - name: grafana-dashboards
+              mountPath: /grafana-dashboards                    # Archivos JSON (fuera del PVC)
 
           resources:
             requests:

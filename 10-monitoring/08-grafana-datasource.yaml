@@ -33,6 +33,7 @@ data:
     datasources:
       - name: Prometheus
         type: prometheus
+        uid: prometheus                      # UID fijo → los dashboards JSON lo referencian con este valor
         access: proxy
         url: http://prometheus-svc:9090     # DNS interno del cluster
         isDefault: true                      # Datasource por defecto en Grafana

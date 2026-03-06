@@ -1,0 +1,41 @@
+# ============================================================
+# CONFIGMAP: Datasource de Grafana (Prometheus)
+# ============================================================
+# Grafana soporta "provisioning": configuración automática al iniciar.
+# Si se monta este archivo en /etc/grafana/provisioning/datasources/,
+# Grafana conecta con Prometheus automáticamente sin configuración manual.
+#
+# Sin esto: habría que entrar a la UI de Grafana, ir a
+#   Configuration → Data Sources → Add → Prometheus → URL → Save
+#
+# Con esto: Grafana ya nace conectado a Prometheus.
+#
+# La URL http://prometheus-svc:9090 funciona porque:
+#   - Ambos están en el namespace "monitoring"
+#   - El Service "prometheus-svc" resuelve via DNS interno de Kubernetes
+#   - Mismo namespace → nombre corto es suficiente
+#
+# COMANDOS:
+#   kubectl apply -f 08-grafana-datasource.yaml
+#   kubectl describe cm grafana-datasource -n monitoring
+# ============================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasource
+  namespace: monitoring
+  labels:
+    app: grafana
+data:
+  datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus-svc:9090     # DNS interno del cluster
+        isDefault: true                      # Datasource por defecto en Grafana
+        editable: true
+        jsonData:
+          timeInterval: "15s"               # Debe coincidir con scrape_interval

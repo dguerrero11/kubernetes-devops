@@ -1,0 +1,57 @@
+# ============================================================
+# ALMACENAMIENTO PERSISTENTE PARA GRAFANA
+# ============================================================
+# Grafana guarda en /var/lib/grafana:
+#   - Dashboards creados manualmente
+#   - Datasources configurados via UI
+#   - Plugins instalados
+#   - Base de datos SQLite (usuarios, preferencias)
+#
+# Sin PVC: todo se pierde al reiniciar el Pod.
+# Con PVC NFS: dashboards y configuración persisten.
+#
+# PREREQUISITO en el servidor NFS (192.168.109.210):
+#   mkdir -p /srv/nfs/k8s/grafana
+#   chown 472:472 /srv/nfs/k8s/grafana
+#   chmod 755 /srv/nfs/k8s/grafana
+#   # El UID 472 es el usuario "grafana" dentro de la imagen oficial
+#
+# COMANDOS:
+#   kubectl apply -f 09-grafana-storage.yaml
+#   kubectl get pv pv-grafana
+#   kubectl get pvc pvc-grafana -n monitoring
+# ============================================================
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-grafana
+  labels:
+    app: grafana
+    type: nfs
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-manual
+  nfs:
+    server: 192.168.109.210
+    path: /srv/nfs/k8s/grafana
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-grafana
+  namespace: monitoring
+  labels:
+    app: grafana
+spec:
+  storageClassName: nfs-manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi

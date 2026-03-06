@@ -1,0 +1,79 @@
+# ============================================================
+# RBAC PARA PROMETHEUS
+# ============================================================
+# Prometheus necesita leer metadatos del cluster para descubrir
+# automáticamente qué Pods y nodos monitorear (Service Discovery).
+#
+# RBAC = Role-Based Access Control
+#   ServiceAccount  → identidad con la que corre el Pod de Prometheus
+#   ClusterRole     → permisos a nivel de todo el cluster
+#   ClusterRoleBinding → une el ServiceAccount con el ClusterRole
+#
+# Sin esto, Prometheus no puede hacer Service Discovery de Kubernetes
+# y obtendremos errores 403 al intentar listar pods/nodos/endpoints.
+#
+# COMANDOS:
+#   kubectl apply -f 02-prometheus-rbac.yaml
+#   kubectl get serviceaccount -n monitoring
+#   kubectl get clusterrole prometheus
+#   kubectl get clusterrolebinding prometheus
+# ============================================================
+
+# 1. ServiceAccount: identidad del Pod de Prometheus
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: monitoring
+  labels:
+    app: prometheus
+
+---
+# 2. ClusterRole: define QUÉ puede hacer Prometheus en el cluster
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+  labels:
+    app: prometheus
+rules:
+  # Leer metadatos de nodos, pods, services, endpoints y namespaces
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - nodes/proxy       # Acceder a métricas de los nodos via API proxy
+      - nodes/metrics
+      - services
+      - endpoints
+      - pods
+      - namespaces
+    verbs: ["get", "list", "watch"]
+
+  # Leer Ingress (para descubrir servicios expuestos)
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+    verbs: ["get", "list", "watch"]
+
+  # Acceso a métricas del API server
+  - nonResourceURLs:
+      - /metrics
+      - /metrics/cadvisor
+    verbs: ["get"]
+
+---
+# 3. ClusterRoleBinding: une el ServiceAccount con el ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+  labels:
+    app: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus              # El ClusterRole creado arriba
+subjects:
+  - kind: ServiceAccount
+    name: prometheus            # El ServiceAccount creado arriba
+    namespace: monitoring

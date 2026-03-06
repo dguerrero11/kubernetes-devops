@@ -1,0 +1,128 @@
+# ============================================================
+# NODE EXPORTER - DaemonSet + Service
+# ============================================================
+# Node Exporter es el agente que expone métricas del SO/hardware
+# de cada nodo: CPU, memoria, disco, red, temperatura, etc.
+#
+# DaemonSet → garantiza que corra UN Pod en CADA nodo del cluster
+#   k8s-master01 → 1 Pod de node-exporter
+#   k8s-worker01 → 1 Pod de node-exporter
+#   k8s-worker02 → 1 Pod de node-exporter
+#
+# Configuración especial necesaria:
+#   hostPID: true          → accede al namespace de procesos del nodo
+#   hostIPC: true          → accede al IPC del nodo
+#   hostNetwork: true      → usa la red del nodo (puerto 9100 del nodo real)
+#   volumeMounts hostPath  → lee el filesystem del nodo para métricas de disco
+#
+# tolerations → necesario para que también corra en el nodo master
+#   (el master tiene el taint node-role.kubernetes.io/control-plane)
+#
+# Métricas disponibles en http://<ip-nodo>:9100/metrics
+#
+# COMANDOS:
+#   kubectl apply -f 06-node-exporter.yaml
+#   kubectl get ds -n monitoring          (ver DaemonSet)
+#   kubectl get pods -n monitoring -o wide (ver en qué nodos está)
+#   curl http://192.168.109.200:9100/metrics | head -50
+#   curl http://192.168.109.201:9100/metrics | head -50
+# ============================================================
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-exporter
+  namespace: monitoring
+  labels:
+    app: node-exporter
+spec:
+  selector:
+    matchLabels:
+      app: node-exporter
+  template:
+    metadata:
+      labels:
+        app: node-exporter
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9100"
+    spec:
+      # Acceso al host (necesario para leer métricas del nodo real)
+      hostPID: true
+      hostIPC: true
+      hostNetwork: true         # Usa la IP del nodo, no la del Pod
+
+      # Toleración para correr también en el nodo master (control-plane)
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+
+      volumes:
+        # Montar el filesystem del nodo para métricas de disco
+        - name: proc
+          hostPath:
+            path: /proc
+        - name: sys
+          hostPath:
+            path: /sys
+        - name: root
+          hostPath:
+            path: /
+
+      containers:
+        - name: node-exporter
+          image: prom/node-exporter:v1.7.0
+          args:
+            - "--path.procfs=/host/proc"
+            - "--path.sysfs=/host/sys"
+            - "--path.rootfs=/host/root"
+            - "--collector.filesystem.ignored-mount-points=^/(dev|proc|sys|var/lib/docker/.+)($|/)"
+          ports:
+            - name: metrics
+              containerPort: 9100
+              hostPort: 9100     # Puerto accesible directamente en el nodo
+          volumeMounts:
+            - name: proc
+              mountPath: /host/proc
+              readOnly: true
+            - name: sys
+              mountPath: /host/sys
+              readOnly: true
+            - name: root
+              mountPath: /host/root
+              readOnly: true
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "50Mi"
+            limits:
+              cpu: "100m"
+              memory: "100Mi"
+          securityContext:
+            privileged: true     # Necesario para acceder a métricas del hardware
+
+---
+# Service para que Prometheus pueda descubrir node-exporter via Kubernetes SD
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-exporter
+  namespace: monitoring
+  labels:
+    app: node-exporter
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9100"
+spec:
+  type: ClusterIP
+  clusterIP: None              # Headless Service → resuelve a las IPs de los Pods
+  selector:
+    app: node-exporter
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: 9100

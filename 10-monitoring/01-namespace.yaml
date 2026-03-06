@@ -1,0 +1,22 @@
+# ============================================================
+# NAMESPACE: monitoring
+# ============================================================
+# Toda la pila de observabilidad va en su propio namespace.
+# Ventajas:
+#   - Aislamiento de recursos y permisos
+#   - Cuotas independientes (LimitRange, ResourceQuota)
+#   - Fácil de borrar todo: kubectl delete ns monitoring
+#
+# COMANDOS:
+#   kubectl apply -f 01-namespace.yaml
+#   kubectl get ns
+#   kubectl get all -n monitoring
+# ============================================================
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    app.kubernetes.io/part-of: monitoring-stack
+    env: produccion

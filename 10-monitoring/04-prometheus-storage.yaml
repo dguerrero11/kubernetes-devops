@@ -1,0 +1,56 @@
+# ============================================================
+# ALMACENAMIENTO PERSISTENTE PARA PROMETHEUS
+# ============================================================
+# Prometheus almacena sus datos en un formato TSDB (Time Series DB)
+# en el directorio /prometheus dentro del contenedor.
+#
+# Sin PVC: los datos históricos se pierden al reiniciar el Pod.
+# Con PVC NFS: los datos persisten → historial de métricas conservado.
+#
+# PREREQUISITO en el servidor NFS (192.168.109.210):
+#   mkdir -p /srv/nfs/k8s/prometheus
+#   chown 65534:65534 /srv/nfs/k8s/prometheus
+#   chmod 755 /srv/nfs/k8s/prometheus
+#   # El UID 65534 es "nobody", que es el usuario con el que corre Prometheus
+#
+# COMANDOS:
+#   kubectl apply -f 04-prometheus-storage.yaml
+#   kubectl get pv pv-prometheus -n monitoring
+#   kubectl get pvc pvc-prometheus -n monitoring
+# ============================================================
+
+# PersistentVolume: el "disco real" apuntando al NFS
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-prometheus
+  labels:
+    app: prometheus
+    type: nfs
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce             # Prometheus solo necesita un nodo a la vez
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-manual
+  nfs:
+    server: 192.168.109.210
+    path: /srv/nfs/k8s/prometheus
+
+---
+# PersistentVolumeClaim: lo que el Deployment solicita
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-prometheus
+  namespace: monitoring
+  labels:
+    app: prometheus
+spec:
+  storageClassName: nfs-manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi

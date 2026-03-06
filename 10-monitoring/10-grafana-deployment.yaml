@@ -83,6 +83,16 @@ spec:
               containerPort: 3000
           env:
             # Credenciales de administrador desde el Secret
+            # ⚠️  IMPORTANTE - Comportamiento de Grafana con passwords:
+            #   GF_SECURITY_ADMIN_PASSWORD solo aplica en el PRIMER arranque
+            #   (cuando grafana.db NO existe en el PVC).
+            #   Si el PVC ya tiene datos, el password en la DB toma precedencia
+            #   y esta variable es IGNORADA.
+            #
+            #   Si el login falla después de un re-deploy:
+            #   kubectl exec -n monitoring deploy/grafana -- \
+            #     grafana-cli admin reset-admin-password <nuevo-password>
+            #   kubectl rollout restart deployment/grafana -n monitoring
             - name: GF_SECURITY_ADMIN_USER
               valueFrom:
                 secretKeyRef:

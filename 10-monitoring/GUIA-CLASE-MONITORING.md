@@ -273,6 +273,23 @@ Usuario:  admin
 Password: devops2026
 ```
 
+> ⚠️ **Gotcha de clase — Password de Grafana y PVC:**
+>
+> `GF_SECURITY_ADMIN_PASSWORD` **solo aplica en el primer arranque** cuando
+> `grafana.db` NO existe todavía en el PVC. Si el PVC ya tiene datos (de un
+> deploy anterior o de una inicialización previa), Grafana usa la contraseña
+> almacenada en SQLite e **ignora el env var** del Secret.
+>
+> **Síntoma:** `Invalid username or password` aunque el Secret sea correcto.
+>
+> **Fix:**
+> ```bash
+> kubectl exec -n monitoring deploy/grafana -- \
+>   grafana-cli admin reset-admin-password devops2026
+> kubectl rollout restart deployment/grafana -n monitoring
+> ```
+> Esto escribe directamente en la DB SQLite del PVC y funciona siempre.
+
 ---
 
 ## PASO 10 — Configurar Grafana (demo en UI)

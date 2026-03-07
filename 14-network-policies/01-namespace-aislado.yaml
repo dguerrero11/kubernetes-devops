@@ -1,0 +1,71 @@
+---
+# Namespace para la demo de NetworkPolicies
+# El label 'kubernetes.io/metadata.name' es automático en K8s 1.21+
+# pero lo ponemos explícito para usarlo en los selectores de políticas
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: red-demo
+  labels:
+    env: demo
+    team: backend
+    kubernetes.io/metadata.name: red-demo
+---
+# Pods de prueba para demostrar las políticas
+# Pod A: servidor web dentro del namespace red-demo
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-servidor
+  namespace: red-demo
+  labels:
+    app: servidor
+    role: backend
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.25
+      ports:
+        - containerPort: 80
+---
+# Pod B: cliente dentro del mismo namespace
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-cliente
+  namespace: red-demo
+  labels:
+    app: cliente
+    role: frontend
+spec:
+  containers:
+    - name: curl
+      image: alpine:3.19
+      command: ["sh", "-c", "sleep 3600"]
+---
+# Pod C: cliente externo (namespace default) para probar el aislamiento
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-externo
+  namespace: default
+  labels:
+    app: pod-externo
+spec:
+  containers:
+    - name: curl
+      image: alpine:3.19
+      command: ["sh", "-c", "sleep 3600"]
+---
+# Service para acceder al pod-servidor por nombre DNS
+apiVersion: v1
+kind: Service
+metadata:
+  name: servidor-svc
+  namespace: red-demo
+spec:
+  selector:
+    app: servidor
+  ports:
+    - port: 80
+      targetPort: 80

@@ -1,0 +1,17 @@
+---
+# ClusterRoleBinding: da al usuario 'developer' lectura global del cluster
+# Combinado con el RoleBinding anterior: puede VER todo, gestionar solo en devops-dev
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: developer-cluster-reader
+  labels:
+    app: rbac-demo
+subjects:
+  - kind: User
+    name: developer
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: cluster-reader
+  apiGroup: rbac.authorization.k8s.io

@@ -1,0 +1,28 @@
+---
+# NetworkPolicy: DENEGAR TODO el tráfico en el namespace red-demo
+#
+# Esta es la política base de seguridad: "deniega todo, permite solo lo necesario"
+# (whitelist model en lugar de blacklist)
+#
+# ANTES de aplicar esta policy:
+#   pod-cliente → curl servidor-svc → 200 OK  ✅
+#   pod-externo → curl <IP-pod-servidor> → 200 OK  ✅
+#
+# DESPUÉS de aplicar esta policy:
+#   pod-cliente → curl servidor-svc → timeout  ❌
+#   pod-externo → curl <IP-pod-servidor> → timeout  ❌
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: red-demo
+spec:
+  # podSelector: {} = aplica a TODOS los pods del namespace
+  podSelector: {}
+
+  # policyTypes con ingress y egress pero sin reglas = denegar todo
+  policyTypes:
+    - Ingress
+    - Egress
+  # Sin reglas ingress → todo el tráfico entrante está bloqueado
+  # Sin reglas egress  → todo el tráfico saliente está bloqueado

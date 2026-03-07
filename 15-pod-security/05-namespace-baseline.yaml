@@ -1,0 +1,70 @@
+---
+# Namespace con PSA nivel 'baseline' — para entornos de desarrollo
+#
+# Nivel baseline (intermedio entre privileged y restricted):
+#   Bloquea los vectores de ataque más críticos:
+#   ✗ privileged: true
+#   ✗ hostPID: true / hostIPC: true / hostNetwork: true
+#   ✗ hostPath volumes (acceso al filesystem del nodo)
+#   ✗ capabilities peligrosas (SYS_ADMIN, NET_ADMIN, etc.)
+#
+#   Permite lo que restricted bloquea:
+#   ✅ Puede correr como root (runAsNonRoot no requerido)
+#   ✅ No requiere drop ALL capabilities
+#   ✅ No requiere readOnlyRootFilesystem
+#   ✅ La imagen nginx:1.25 estándar funciona aquí
+#
+# Cuándo usar cada nivel:
+#   restricted → producción (máxima seguridad)
+#   baseline   → desarrollo/staging (balance entre seguridad y facilidad)
+#   privileged → solo para system pods (no usar en apps de negocio)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: desarrollo-demo
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+    environment: development
+    security-level: baseline
+
+---
+# Deployment de ejemplo que funciona en baseline pero NO en restricted
+# (no tiene runAsNonRoot ni drop capabilities — usa nginx:1.25 estándar)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-baseline
+  namespace: desarrollo-demo
+  labels:
+    app: web-baseline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-baseline
+  template:
+    metadata:
+      labels:
+        app: web-baseline
+    spec:
+      # Solo el SecurityContext mínimo requerido por baseline
+      # (no es necesario runAsNonRoot, no se exige drop ALL, etc.)
+      containers:
+        - name: nginx
+          image: nginx:1.25
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+          # Este pod recibirá un WARNING de kubectl porque el namespace
+          # tiene warn: restricted y este pod no cumple restricted
+          # → "Warning: would violate PodSecurity "restricted:latest":..."
+          # Pero se acepta porque enforce solo es baseline

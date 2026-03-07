@@ -1,0 +1,41 @@
+---
+# Role: permisos SOLO dentro del namespace devops-dev
+# Un Role nunca puede otorgar permisos fuera de su namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: developer-role
+  namespace: devops-dev
+  labels:
+    app: rbac-demo
+rules:
+  # Puede ver y gestionar Pods
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "pods/exec"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+
+  # Puede ver y gestionar Deployments
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Puede ver y gestionar Services
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Puede ver ConfigMaps (pero NO Secrets — datos sensibles)
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+
+  # Puede ver eventos (útil para debugging)
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch"]
+
+  # NO TIENE:
+  # - acceso a Secrets
+  # - acceso a Nodes
+  # - acceso a otros namespaces
+  # - permisos de delete en Deployments de producción

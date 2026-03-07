@@ -1,0 +1,11 @@
+---
+# Namespace dedicado para el usuario 'developer' de la demo
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devops-dev
+  labels:
+    env: development
+    team: devops
+    # Usado por NetworkPolicies para identificar el namespace
+    kubernetes.io/metadata.name: devops-dev

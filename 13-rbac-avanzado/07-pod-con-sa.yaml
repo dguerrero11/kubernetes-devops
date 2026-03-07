@@ -1,0 +1,39 @@
+---
+# ConfigMap de ejemplo que la app va a leer
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: devops-dev
+  labels:
+    app: rbac-demo
+data:
+  app.env: "development"
+  app.version: "1.0.0"
+  db.host: "postgres-svc"
+---
+# Pod que usa el ServiceAccount app-sa
+# Demuestra cómo una app obtiene su token automáticamente
+apiVersion: v1
+kind: Pod
+metadata:
+  name: app-pod
+  namespace: devops-dev
+  labels:
+    app: rbac-demo
+spec:
+  # Asignar el ServiceAccount al Pod
+  serviceAccountName: app-sa
+
+  containers:
+    - name: app
+      image: alpine:3.19
+      command: ["sh", "-c", "sleep 3600"]
+
+      # Variables de entorno desde el ConfigMap
+      envFrom:
+        - configMapRef:
+            name: app-config
+
+      # El token del ServiceAccount se monta automáticamente aquí:
+      # /var/run/secrets/kubernetes.io/serviceaccount/token

@@ -1,0 +1,37 @@
+---
+# Pod INSEGURO — demo de rechazo por PSA
+#
+# Este pod viola el nivel 'restricted' del namespace seguro-demo:
+#   ✗ No define runAsNonRoot: true
+#   ✗ No define allowPrivilegeEscalation: false
+#   ✗ No hace drop de capabilities
+#   ✗ No define seccompProfile
+#   ✗ Usa imagen con proceso root por defecto
+#
+# Resultado esperado al hacer kubectl apply:
+#   Error from server (Forbidden): pods "pod-inseguro" is forbidden:
+#   violates PodSecurity "restricted:latest": ...
+#
+# INSTRUCCIÓN CLASE:
+#   kubectl apply -f 02-pod-inseguro.yaml -n seguro-demo
+#   → debe ser rechazado
+#
+#   kubectl apply -f 02-pod-inseguro.yaml -n default
+#   → acepta (namespace default no tiene PSA configurado)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-inseguro
+  # namespace: seguro-demo  ← descomentar para demo de rechazo
+  namespace: default
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.25
+      # ✗ Sin SecurityContext = máximos privilegios por defecto:
+      #   - corre como root (UID 0)
+      #   - puede escalar privilegios
+      #   - tiene todas las capabilities de Linux
+      #   - puede escribir en cualquier parte del filesystem
+      ports:
+        - containerPort: 80

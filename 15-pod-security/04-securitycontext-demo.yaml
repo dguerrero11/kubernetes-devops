@@ -1,0 +1,73 @@
+---
+# Demo comparativa: Pod inseguro vs Pod seguro
+# Ambos corren en el namespace 'default' (sin PSA restrict) para poder
+# compararlos lado a lado y ver la diferencia con kubectl exec + ps aux
+#
+# INSTRUCCIÓN CLASE:
+# 1. Aplicar ambos pods en namespace default
+# 2. Hacer kubectl exec y comprobar usuario, filesystem, capabilities
+# 3. Luego intentar aplicar el pod-inseguro en seguro-demo → falla
+
+# ────────────────────────────────────────────────────────────
+# POD A: sin SecurityContext (inseguro)
+# ────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Pod
+metadata:
+  name: demo-inseguro
+  namespace: default
+  labels:
+    demo: security-comparison
+    tipo: inseguro
+spec:
+  containers:
+    - name: app
+      image: alpine:3.18
+      command: ["sleep", "3600"]
+      # Sin SecurityContext:
+      # - corre como root (UID 0)
+      # - puede escribir en cualquier directorio
+      # - tiene capabilities completas
+      # - puede intentar escalar privilegios
+
+---
+# ────────────────────────────────────────────────────────────
+# POD B: con SecurityContext completo (seguro)
+# ────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Pod
+metadata:
+  name: demo-seguro
+  namespace: default
+  labels:
+    demo: security-comparison
+    tipo: seguro
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+
+  containers:
+    - name: app
+      image: alpine:3.18
+      command: ["sleep", "3600"]
+
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+
+      # Necesario porque readOnlyRootFilesystem: true
+      volumeMounts:
+        - name: tmp-writable
+          mountPath: /tmp
+
+  volumes:
+    - name: tmp-writable
+      emptyDir: {}

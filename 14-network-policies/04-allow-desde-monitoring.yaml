@@ -1,0 +1,30 @@
+---
+# NetworkPolicy: permitir que Prometheus haga scraping a los pods de red-demo
+# Caso real: el namespace monitoring necesita acceder a las métricas de las apps
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scraping
+  namespace: red-demo
+spec:
+  # Aplica a pods que exponen métricas (etiqueta role: backend)
+  podSelector:
+    matchLabels:
+      role: backend
+
+  policyTypes:
+    - Ingress
+
+  ingress:
+    - from:
+        # Permitir tráfico desde el namespace monitoring
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        # Puerto de métricas (Prometheus scraping)
+        - port: 9090
+          protocol: TCP
+        # Puerto alternativo de métricas de la app
+        - port: 8080
+          protocol: TCP

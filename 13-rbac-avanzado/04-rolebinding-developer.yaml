@@ -1,0 +1,19 @@
+---
+# RoleBinding: conecta el usuario 'developer' con el Role en devops-dev
+# El usuario 'developer' viene del CN del certificado X.509
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: developer-rolebinding
+  namespace: devops-dev
+  labels:
+    app: rbac-demo
+subjects:
+  # El CN del certificado X.509 es el nombre de usuario en K8s
+  - kind: User
+    name: developer          # debe coincidir con CN= del certificado
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: developer-role
+  apiGroup: rbac.authorization.k8s.io

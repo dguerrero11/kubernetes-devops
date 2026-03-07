@@ -1,0 +1,96 @@
+---
+# Deployment SEGURO — cumple nivel 'restricted' de PSA
+#
+# Satisface todos los requisitos del nivel restricted:
+#   ✅ runAsNonRoot: true
+#   ✅ runAsUser: 1000 (UID no-root explícito)
+#   ✅ allowPrivilegeEscalation: false
+#   ✅ capabilities: drop ALL
+#   ✅ readOnlyRootFilesystem: true
+#   ✅ seccompProfile: RuntimeDefault
+#
+# Nota: nginx no puede correr con UID 1000 directamente (necesita
+# escribir en /var/cache/nginx y /var/run). Por eso usamos
+# nginxinc/nginx-unprivileged que está diseñada para no-root.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-seguro
+  namespace: seguro-demo
+  labels:
+    app: web-seguro
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web-seguro
+  template:
+    metadata:
+      labels:
+        app: web-seguro
+    spec:
+      # ── SecurityContext a nivel POD ──────────────────────────
+      securityContext:
+        runAsNonRoot: true        # el proceso principal NO puede ser root
+        runAsUser: 1000           # UID explícito (no-root)
+        runAsGroup: 1000          # GID del proceso
+        fsGroup: 1000             # GID para los volúmenes montados
+        # Perfil seccomp: limita las syscalls disponibles al proceso
+        seccompProfile:
+          type: RuntimeDefault    # usa el perfil del runtime (containerd)
+
+      containers:
+        - name: nginx
+          # nginx-unprivileged: diseñada para correr sin root
+          # escucha en puerto 8080 (no necesita 80 que requiere root)
+          image: nginxinc/nginx-unprivileged:1.25-alpine
+          ports:
+            - containerPort: 8080
+
+          # ── SecurityContext a nivel CONTENEDOR ────────────────
+          securityContext:
+            allowPrivilegeEscalation: false   # no puede obtener más privilegios
+            readOnlyRootFilesystem: true       # filesystem de solo lectura
+            capabilities:
+              drop:
+                - ALL             # eliminar TODAS las capabilities de Linux
+
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+
+          # Necesario porque readOnlyRootFilesystem: true
+          # nginx necesita escribir en /tmp y /var/cache/nginx
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
+            - name: nginx-cache
+              mountPath: /var/cache/nginx
+            - name: nginx-run
+              mountPath: /var/run
+
+      volumes:
+        - name: tmp-dir
+          emptyDir: {}
+        - name: nginx-cache
+          emptyDir: {}
+        - name: nginx-run
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-seguro-svc
+  namespace: seguro-demo
+spec:
+  selector:
+    app: web-seguro
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP

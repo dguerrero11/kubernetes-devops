@@ -1,0 +1,34 @@
+---
+# NetworkPolicy: permitir resolución DNS saliente
+#
+# CRÍTICO: después de aplicar default-deny-all, los pods no pueden resolver
+# nombres de DNS. Sin DNS, no pueden conectarse a Services por nombre.
+# Esta política SIEMPRE debe aplicarse junto con default-deny-all.
+#
+# Sin esta policy: curl servidor-svc → "Could not resolve host: servidor-svc"
+# Con esta policy: curl servidor-svc → puede resolver la IP del Service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-dns
+  namespace: red-demo
+spec:
+  # Aplica a todos los pods del namespace
+  podSelector: {}
+
+  policyTypes:
+    - Egress
+
+  egress:
+    # Permitir salida al servicio DNS del cluster (CoreDNS)
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Permitir acceso al API server de K8s (para health checks y SA token validation)
+    - ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP

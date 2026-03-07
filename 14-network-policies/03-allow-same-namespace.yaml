@@ -1,0 +1,26 @@
+---
+# NetworkPolicy: permitir tráfico DENTRO del mismo namespace
+# Pods de red-demo pueden hablar entre sí, pero no con otros namespaces
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: red-demo
+spec:
+  # Aplica a todos los pods del namespace
+  podSelector: {}
+
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    - from:
+        # Solo permitir tráfico de pods del mismo namespace
+        - podSelector: {}
+          # podSelector: {} sin namespaceSelector = mismo namespace
+
+  egress:
+    - to:
+        # Solo permitir tráfico hacia pods del mismo namespace
+        - podSelector: {}

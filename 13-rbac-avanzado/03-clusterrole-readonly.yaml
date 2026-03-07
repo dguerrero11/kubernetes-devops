@@ -1,0 +1,36 @@
+---
+# ClusterRole: permisos de SOLO LECTURA a nivel de TODO el cluster
+# Útil para developers que necesitan ver el estado global sin poder modificar nada
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cluster-reader
+  labels:
+    app: rbac-demo
+rules:
+  # Ver nodos del cluster (útil para saber disponibilidad)
+  - apiGroups: [""]
+    resources: ["nodes", "namespaces"]
+    verbs: ["get", "list", "watch"]
+
+  # Ver recursos en cualquier namespace (solo lectura)
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "endpoints", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+
+  # Ver Deployments, ReplicaSets, DaemonSets en cualquier namespace
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
+    verbs: ["get", "list", "watch"]
+
+  # Ver PersistentVolumes (recursos del cluster, no de namespace)
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch"]
+
+  # Ver StorageClasses
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+
+  # NO TIENE: create, update, patch, delete en NADA

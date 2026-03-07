@@ -1,0 +1,31 @@
+---
+# Namespace con PodSecurityAdmission (PSA) nivel 'restricted'
+#
+# PSA tiene 3 modos para cada nivel:
+#   enforce → rechaza pods que violen el nivel (bloquea el apply)
+#   warn    → permite el pod pero muestra warning en kubectl
+#   audit   → permite el pod pero lo registra en el audit log
+#
+# Nivel 'restricted':
+#   - runAsNonRoot: true (no puede correr como root)
+#   - allowPrivilegeEscalation: false
+#   - readOnlyRootFilesystem: true (opcional pero recomendado)
+#   - capabilities: drop ALL
+#   - seccompProfile: RuntimeDefault o Localhost
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: seguro-demo
+  labels:
+    # Aplicar nivel restricted: rechaza pods inseguros
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    # Avisar también si usan el namespace con pods que violarían restricted
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+    # Registrar en audit log
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    # Label descriptivo
+    environment: production
+    security-level: restricted

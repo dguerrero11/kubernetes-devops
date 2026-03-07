@@ -1,6 +1,6 @@
 # Guía de Clase — Tekton CI en Kubernetes
 
-**Versiones:** Tekton Pipelines v0.59.0 · Dashboard v0.43.0
+**Versiones:** Tekton Pipelines v1.6.0 · Dashboard v0.63.1
 **Namespace propio:** `tekton-pipelines`
 **Dashboard:** http://192.168.109.200:30094
 **Directorio:** `/root/devops2026/11-tekton/`
@@ -61,14 +61,14 @@ exportfs -ra
 > Ejecutar en **k8s-master01**
 
 ```bash
-# Instalar Tekton Pipelines v0.59.0
-kubectl apply -f https://storage.googleapis.com/tekton-releases/pipeline/previous/v0.59.0/release.yaml
+# Instalar Tekton Pipelines v1.6.0 (usa ghcr.io — NO gcr.io que está deprecated)
+kubectl apply -f https://storage.googleapis.com/tekton-releases/pipeline/latest/release.yaml
 
 # Esperar a que los pods estén Running (puede tardar 2-3 minutos)
 kubectl get pods -n tekton-pipelines -w
 
-# Instalar Tekton Dashboard v0.43.0
-kubectl apply -f https://storage.googleapis.com/tekton-releases/dashboard/previous/v0.43.0/release-full.yaml
+# Instalar Tekton Dashboard v0.63.1
+kubectl apply -f https://storage.googleapis.com/tekton-releases/dashboard/latest/release-full.yaml
 
 # Esperar al pod del dashboard
 kubectl get pods -n tekton-pipelines -l app=tekton-dashboard -w
@@ -102,8 +102,8 @@ La CLI `tkn` es la herramienta de línea de comandos de Tekton (como kubectl per
 
 ```bash
 # Instalar en el master
-curl -LO https://github.com/tektoncd/cli/releases/download/v0.35.2/tkn_0.35.2_Linux_x86_64.tar.gz
-tar xvzf tkn_0.35.2_Linux_x86_64.tar.gz -C /usr/local/bin tkn
+curl -LO https://github.com/tektoncd/cli/releases/download/v0.37.0/tkn_0.37.0_Linux_x86_64.tar.gz
+tar xvzf tkn_0.37.0_Linux_x86_64.tar.gz -C /usr/local/bin tkn
 chmod +x /usr/local/bin/tkn
 
 # Verificar

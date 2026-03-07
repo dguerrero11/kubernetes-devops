@@ -29,14 +29,21 @@ spec:
     - name: clonar-repo
       image: alpine/git:2.43.0
       workingDir: $(workspaces.source.path)
+      env:
+        # Evita que git intente pedir credenciales en entorno sin TTY
+        - name: GIT_TERMINAL_PROMPT
+          value: "0"
       command:
         - sh
         - -c
       args:
         - |
+          set -e
           echo "Clonando repositorio: $(params.repo-url)"
           echo "Rama: $(params.revision)"
-          git clone --depth 1 --branch $(params.revision) $(params.repo-url) .
+          git clone --depth 1 --branch $(params.revision) \
+            --config credential.helper= \
+            $(params.repo-url) .
           echo ""
           echo "Clon exitoso!"
 

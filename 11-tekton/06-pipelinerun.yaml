@@ -1,0 +1,31 @@
+---
+# PipelineRun: instancia de ejecución de un Pipeline
+# Cada vez que quieras correr el Pipeline, creas un nuevo PipelineRun
+# NOTA: Para re-ejecutar, cambia el nombre (ej: demo-pipeline-run-02)
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  name: demo-pipeline-run-01
+  namespace: default
+  labels:
+    app: tekton-demo
+    tekton.dev/pipeline: demo-pipeline
+spec:
+  # Pipeline a ejecutar
+  pipelineRef:
+    name: demo-pipeline
+
+  # ServiceAccount con permisos para crear pods
+  taskRunTemplate:
+    serviceAccountName: tekton-pipeline-sa
+
+  # Parámetros pasados al Pipeline
+  params:
+    - name: repo-url
+      value: https://github.com/dguerrero11/kubernetes-devops
+
+  # Workspaces: mapeamos el workspace del Pipeline al PVC de NFS
+  workspaces:
+    - name: shared-workspace
+      persistentVolumeClaim:
+        claimName: pvc-tekton-workspace

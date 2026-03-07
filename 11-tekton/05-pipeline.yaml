@@ -1,0 +1,57 @@
+---
+# Pipeline: orquesta múltiples Tasks en una secuencia
+# Un Pipeline define el orden y las dependencias entre Tasks
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: demo-pipeline
+  namespace: default
+  labels:
+    app: tekton-demo
+spec:
+  # Workspace del Pipeline: se mapea al workspace de cada Task que lo necesite
+  workspaces:
+    - name: shared-workspace
+      description: Workspace NFS compartido entre todas las Tasks del pipeline
+
+  # Parámetros del Pipeline (se pasan a las Tasks)
+  params:
+    - name: repo-url
+      type: string
+      description: URL del repositorio a clonar
+      default: https://github.com/dguerrero11/kubernetes-devops
+
+  # Tasks: las tareas que componen el pipeline y su orden de ejecución
+  tasks:
+    # Task 1: mensaje de inicio (corre primero)
+    - name: paso-saludo
+      taskRef:
+        name: hello-task
+      params:
+        - name: mensaje
+          value: "Iniciando pipeline DevOps 2026..."
+
+    # Task 2: clonar el repo (corre DESPUÉS del saludo)
+    - name: paso-clone
+      taskRef:
+        name: git-clone-task
+      runAfter:
+        - paso-saludo            # <-- dependencia explícita
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+      params:
+        - name: repo-url
+          value: $(params.repo-url)
+        - name: revision
+          value: main
+
+    # Task 3: mensaje de éxito (corre DESPUÉS del clone)
+    - name: paso-resultado
+      taskRef:
+        name: hello-task
+      runAfter:
+        - paso-clone             # <-- dependencia explícita
+      params:
+        - name: mensaje
+          value: "Pipeline completado con exito! Repo clonado y analizado."

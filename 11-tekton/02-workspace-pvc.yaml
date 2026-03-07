@@ -1,0 +1,35 @@
+---
+# PersistentVolume en NFS para el workspace de Tekton
+# El workspace permite compartir archivos entre los diferentes Steps de un Pipeline
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-tekton-workspace
+  labels:
+    app: tekton-demo
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-manual
+  nfs:
+    server: 192.168.109.210
+    path: /srv/nfs/k8s/tekton-workspace
+---
+# PersistentVolumeClaim que reclamará el PV anterior
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-tekton-workspace
+  namespace: default
+  labels:
+    app: tekton-demo
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: nfs-manual
+  resources:
+    requests:
+      storage: 2Gi

@@ -1,0 +1,61 @@
+---
+# Task: clona un repositorio Git en el workspace compartido
+# Demuestra el concepto de Workspaces: volúmenes compartidos entre Tasks de un Pipeline
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: git-clone-task
+  namespace: default
+  labels:
+    app: tekton-demo
+spec:
+  # Workspace: directorio compartido donde se clonan los archivos
+  # Otros Tasks del Pipeline pueden leer este mismo workspace
+  workspaces:
+    - name: source
+      description: Directorio donde se clona el repositorio
+
+  params:
+    - name: repo-url
+      type: string
+      description: URL del repositorio Git a clonar
+    - name: revision
+      type: string
+      description: Rama o commit a clonar
+      default: main
+
+  steps:
+    # Step 1: clonar el repositorio
+    - name: clonar-repo
+      image: alpine/git:2.43.0
+      workingDir: $(workspaces.source.path)
+      command:
+        - sh
+        - -c
+      args:
+        - |
+          echo "Clonando repositorio: $(params.repo-url)"
+          echo "Rama: $(params.revision)"
+          git clone --depth 1 --branch $(params.revision) $(params.repo-url) .
+          echo ""
+          echo "Clon exitoso!"
+
+    # Step 2: mostrar el contenido clonado
+    - name: explorar-repo
+      image: alpine:3.19
+      workingDir: $(workspaces.source.path)
+      command:
+        - sh
+        - -c
+      args:
+        - |
+          echo "=============================="
+          echo "Contenido del repositorio:"
+          echo "=============================="
+          ls -la
+          echo ""
+          echo "Carpetas del proyecto:"
+          ls -d */ 2>/dev/null || echo "(sin subcarpetas)"
+          echo ""
+          echo "Total de archivos YAML:"
+          find . -name "*.yaml" | wc -l

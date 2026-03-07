@@ -1,0 +1,24 @@
+---
+# Service NodePort para exponer el Tekton Dashboard al exterior
+# El Dashboard instala por defecto un ClusterIP — este Service lo expone con NodePort
+apiVersion: v1
+kind: Service
+metadata:
+  name: tekton-dashboard-nodeport
+  namespace: tekton-pipelines
+  labels:
+    app: tekton-dashboard
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/part-of: tekton-dashboard
+spec:
+  type: NodePort
+  selector:
+    app: tekton-dashboard
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/part-of: tekton-dashboard
+  ports:
+    - name: http
+      port: 9097
+      targetPort: 9097
+      nodePort: 30094
+      protocol: TCP

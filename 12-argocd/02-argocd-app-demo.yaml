@@ -1,0 +1,36 @@
+---
+# Application: recurso nativo de Argo CD que define qué sincronizar y desde dónde
+# Argo CD monitoreará el repo GitHub y aplicará automáticamente cualquier cambio
+# en la carpeta 05-services/ al namespace default del cluster
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo-services
+  namespace: argocd
+  labels:
+    app: argocd-demo
+  # Finalizer para limpiar recursos al borrar la Application
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # Proyecto de Argo CD (default = sin restricciones adicionales)
+  project: default
+
+  # Fuente: repositorio Git y carpeta a sincronizar
+  source:
+    repoURL: https://github.com/dguerrero11/kubernetes-devops
+    targetRevision: HEAD          # siempre apunta al último commit de main
+    path: 05-services             # carpeta del repo a sincronizar
+
+  # Destino: cluster y namespace donde se aplican los manifests
+  destination:
+    server: https://kubernetes.default.svc   # cluster local
+    namespace: default
+
+  # Política de sincronización automática (GitOps)
+  syncPolicy:
+    automated:
+      prune: true        # elimina recursos del cluster que ya no están en Git
+      selfHeal: true     # re-sincroniza si alguien modifica el cluster manualmente
+    syncOptions:
+      - CreateNamespace=true   # crea el namespace si no existe

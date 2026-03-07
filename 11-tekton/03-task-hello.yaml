@@ -1,0 +1,33 @@
+---
+# Task: la unidad básica de trabajo en Tekton
+# Una Task contiene uno o más Steps que corren secuencialmente en el mismo Pod
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: hello-task
+  namespace: default
+  labels:
+    app: tekton-demo
+spec:
+  # Parámetros de entrada de la Task
+  params:
+    - name: mensaje
+      type: string
+      description: Mensaje a mostrar en el log
+      default: "Hola desde Tekton!"
+
+  # Steps: cada step es un contenedor que corre secuencialmente
+  steps:
+    - name: imprimir-mensaje
+      image: alpine:3.19
+      command:
+        - sh
+        - -c
+      args:
+        - |
+          echo "=============================="
+          echo "$(params.mensaje)"
+          echo "=============================="
+          echo "Nodo: $(hostname)"
+          echo "Fecha: $(date)"
+          echo "=============================="

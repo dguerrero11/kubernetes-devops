@@ -7,6 +7,130 @@
 
 ---
 
+## 🎓 Guión para el instructor
+
+### El concepto en una frase
+> *"Con GitOps, Git es la única fuente de verdad. Nadie hace `kubectl apply` manualmente — Argo CD sincroniza el cluster automáticamente desde el repo."*
+
+### El problema que resuelve (10 min — abrir con esto)
+
+Plantear el escenario a la clase:
+```
+Equipo de 5 personas, todos con acceso a kubectl en producción:
+
+  Dev A → kubectl apply -f deployment-v1.yaml    (lunes)
+  Dev B → kubectl apply -f deployment-v2.yaml    (martes)
+  Dev A → kubectl edit deployment nginx-web       (miércoles — "fix rápido")
+  Dev C → kubectl scale deployment nginx --replicas=0  (jueves — "prueba")
+
+Pregunta: ¿qué hay REALMENTE en producción el viernes?
+→ Nadie lo sabe con certeza. No hay auditoría. No hay rollback fácil.
+```
+
+**Con GitOps:**
+```
+REGLA: lo que está en Git = lo que está en el cluster. Siempre.
+
+Dev A → modifica YAML → git commit → git push → PR → aprobación → merge
+                                                              │
+                                                         Argo CD
+                                                              │
+                                                         kubectl apply
+                                                         (automático)
+```
+
+Beneficios clave:
+- **Auditoría**: `git log` muestra quién cambió qué y cuándo
+- **Rollback**: `git revert` → Argo CD revierte el cluster
+- **Consistencia**: el cluster SIEMPRE refleja Git, sin desviaciones
+
+### Los 3 conceptos centrales de Argo CD (10 min)
+
+**1. Application** — "qué sincronizar y desde dónde"
+```yaml
+source:  github.com/repo  →  carpeta 05-services/
+destination: cluster local  →  namespace default
+```
+
+**2. Sync Status** — "¿Git == Cluster?"
+```
+Synced    → ✅ Git == Cluster (todo OK)
+OutOfSync → ⚠️  Git != Cluster (hay diferencias pendientes)
+Unknown   → ❓  No se puede comparar (error de conexión al repo)
+```
+
+**3. Health Status** — "¿los recursos funcionan?"
+```
+Healthy     → ✅ Pods running, Services con endpoints
+Progressing → 🔄 Deployment actualizándose
+Degraded    → ❌ Pods en CrashLoop o error
+```
+
+### Demo WOW — GitOps en vivo (15 min)
+
+**Parte 1: cambio normal via Git**
+```bash
+# 1. Ver estado actual
+kubectl get deployment nginx-web -n default
+
+# 2. Cambiar replicas en Git (en el master o localmente)
+vi 05-services/03-deployment-y-service-completo.yaml
+# replicas: 1  →  replicas: 5
+
+git add . && git commit -m "escalar a 5 replicas" && git push
+
+# 3. En otro terminal: monitorear
+watch kubectl get pods -n default
+
+# 4. En la UI: ver el commit aparece como HEAD → OutOfSync → Syncing → Synced
+```
+
+**Parte 2: selfHeal — el más impactante**
+
+> *"Imaginemos que alguien entra al cluster directamente y hace un cambio sin pasar por Git. Argo CD lo detecta y lo revierte."*
+
+```bash
+# Alguien bypasea Git y modifica el cluster directamente
+kubectl scale deployment nginx-web -n default --replicas=1
+
+# Argo CD detecta el drift en segundos
+watch kubectl get pods -n default
+# → Los pods VUELVEN al número que dice Git automáticamente
+```
+
+**Mensaje de cierre:**
+> *"En producción real, nadie tiene acceso directo a kubectl. Todo pasa por Git → PR → aprobación → merge → Argo CD. El cluster es de solo lectura para los humanos."*
+
+### Preguntas clave para la clase
+- *¿Qué pasa si borro un recurso del cluster manualmente?* → `prune: true` lo vuelve a crear desde Git
+- *¿Cómo hago un rollback?* → `git revert` o `HISTORY AND ROLLBACK` en la UI
+- *¿Cada cuánto sincroniza?* → Polling cada 3 min, o inmediato con webhook de GitHub
+- *¿Puede manejar secrets?* → Sí, con Sealed Secrets o External Secrets Operator (clase avanzada)
+
+### Comparativa final: Tekton vs Argo CD
+```
+┌─────────────┬──────────────────────┬─────────────────────────┐
+│             │ Tekton               │ Argo CD                 │
+├─────────────┼──────────────────────┼─────────────────────────┤
+│ Rol         │ CI (build, test)     │ CD (deploy, sync)       │
+│ Qué hace    │ Ejecuta pipelines    │ Sincroniza Git→Cluster  │
+│ Cuándo corre│ Al hacer push/manual │ Continuamente (3 min)   │
+│ Fuente      │ Código fuente        │ Manifests YAML en Git   │
+│ UI          │ :30094               │ :30095                  │
+└─────────────┴──────────────────────┴─────────────────────────┘
+
+El combo CI/CD completo:
+  Developer → git push → Tekton (CI: build+test) → imagen nueva
+                                    │
+                                    ▼
+                              actualiza tag en YAML
+                                    │
+                                    ▼
+                             Argo CD (CD: deploy) → Cluster
+```
+
+---
+
 ## Arquitectura de la clase
 
 ```

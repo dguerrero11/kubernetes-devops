@@ -7,6 +7,76 @@
 
 ---
 
+## 🎓 Guión para el instructor
+
+### El concepto en una frase
+> *"Tekton es un sistema CI nativo de Kubernetes: en vez de un servidor Jenkins externo, los pipelines corren como Pods dentro del propio cluster."*
+
+### Analogía inicial (5 min)
+```
+Jenkins tradicional:  servidor externo → ejecuta scripts en el servidor
+Tekton en K8s:        cada Step        → es un contenedor dentro del cluster
+```
+
+Preguntar a la clase: *¿Qué ventaja tiene correr los pipelines dentro del cluster?*
+- Respuesta: mismas herramientas (kubectl, RBAC, secrets), sin infraestructura adicional, escala igual que cualquier workload
+
+### Pirámide de conceptos — explicar de abajo hacia arriba (15 min)
+```
+PipelineRun  →  "el botón de arrancar" — instancia única de ejecución
+    │
+Pipeline     →  "el guión" — define el orden y dependencias entre Tasks
+    │
+Task         →  "una escena" — agrupa Steps que corren en el MISMO Pod
+    │
+Step         →  "una línea" — un contenedor, el trabajo mínimo posible
+```
+
+**En pizarra mostrar:**
+```
+kubectl create -f pipelinerun.yaml
+        │
+        ▼
+  PipelineRun crea TaskRuns
+        │
+        ▼
+  Cada TaskRun crea un Pod
+        │
+        ▼
+  Cada Step = un contenedor dentro del Pod
+        │
+        ▼
+  Pod muere → logs quedan en Tekton Dashboard
+```
+
+### Concepto clave: Workspaces (10 min)
+> *"Sin workspace, cada Task tiene su propio Pod aislado y no puede leer los archivos que dejó la Task anterior. El workspace es el volumen NFS compartido que los conecta."*
+
+```
+paso-saludo  (Pod 1) ────────────────────────────► NFS /tekton-workspace
+                                                          │
+paso-clone   (Pod 2) ─── git clone ──────────────► NFS /tekton-workspace
+                                                          │
+paso-result  (Pod 3) ─── lee resultado ──────────► NFS /tekton-workspace
+```
+
+### Preguntas clave para la clase
+- *¿Por qué `runAfter`?* → Sin él, las Tasks correrían en paralelo (a veces es lo que quieres)
+- *¿Por qué usamos NFS para el workspace?* → Los Pods pueden estar en distintos nodos
+- *¿Qué pasa si un Step falla?* → Con `set -e`, el Pod falla → la Task falla → el Pipeline se detiene
+
+### Demo en vivo — secuencia recomendada
+```
+1. kubectl apply -f 03-task-hello.yaml       → mostrar anatomía Task
+2. Correr TaskRun manual → ver Pod → ver logs
+3. kubectl apply -f 04-task-git-clone.yaml   → mostrar workspace
+4. kubectl apply -f 05-pipeline.yaml         → mostrar runAfter
+5. kubectl create -f 06-pipelinerun.yaml     → abrir Dashboard :30094
+6. Mostrar el grafo de ejecución en tiempo real
+```
+
+---
+
 ## Arquitectura de la clase
 
 ```

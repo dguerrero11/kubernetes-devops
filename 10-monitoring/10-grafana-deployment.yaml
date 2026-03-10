@@ -66,6 +66,8 @@ spec:
                   name: grafana-datasource        # Datasource de Prometheus
               - configMap:
                   name: grafana-loki-datasource   # Datasource de Loki
+              - configMap:
+                  name: grafana-tempo-datasource  # Datasource de Tempo
 
         - name: grafana-dashboard-provider
           configMap:

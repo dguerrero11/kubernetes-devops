@@ -1,13 +1,15 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # ServiceProfile: Retries y Timeouts por ruta HTTP
 #
-# Define el comportamiento del proxy de Linkerd para el servicio backend-svc:
-#   - Timeout por ruta
-#   - Retry budget (presupuesto de reintentos)
-#   - Clasificación de respuestas como éxito o error
+# Define el comportamiento del proxy de Linkerd para el servicio backend-svc.
 #
-# IMPORTANTE: El nombre debe ser exactamente:
-#   <service>.<namespace>.svc.cluster.local
+# ESTRUCTURA CORRECTA en Linkerd v2.14:
+#   - retryBudget → campo TOP-LEVEL en spec (aplica a todo el servicio)
+#   - isRetryable → campo por RUTA (marca rutas que pueden reintentarse)
+#   - timeout     → campo por RUTA
+#   - responseClasses → campo por RUTA
+#
+# NOMBRE: debe ser exactamente <service>.<namespace>.svc.cluster.local
 # ─────────────────────────────────────────────────────────────────────────────
 apiVersion: linkerd.io/v1alpha2
 kind: ServiceProfile
@@ -15,6 +17,15 @@ metadata:
   name: backend-svc.linkerd-demo.svc.cluster.local
   namespace: linkerd-demo
 spec:
+  # retryBudget es TOP-LEVEL: aplica a todas las rutas marcadas con isRetryable
+  # retryRatio: por cada 10 req normales, permite 2 reintentos (20%)
+  # minRetriesPerSecond: mínimo garantizado aunque el budget esté agotado
+  # ttl: ventana de tiempo para calcular el budget
+  retryBudget:
+    retryRatio: 0.2
+    minRetriesPerSecond: 10
+    ttl: 10s
+
   routes:
   # ─────────────────────────────────────────
   # Ruta: GET /api/data
@@ -23,52 +34,30 @@ spec:
     condition:
       method: GET
       pathRegex: /api/data
-    # Timeout: si el backend no responde en 500ms, el proxy retorna error
+    # Timeout por ruta: si el backend no responde en 500ms → error
     timeout: 500ms
-    # Clasificar 5xx como errores (para métricas de success rate)
+    # Marcar esta ruta como reintentable (usa el retryBudget del spec)
+    isRetryable: true
+    # Clasificar 5xx como errores para las métricas de success rate
     responseClasses:
     - condition:
         status:
           min: 500
           max: 599
       isFailure: true
-    # Retry budget: Linkerd puede reintentar hasta el 20% de solicitudes fallidas
-    # minRetriesPerSecond: mínimo de reintentos permitidos aunque el budget sea 0
-    # ttl: tiempo de vida de los contadores del budget
-    retryBudget:
-      retryRatio: 0.2
-      minRetriesPerSecond: 10
-      ttl: 10s
 
   # ─────────────────────────────────────────
-  # Ruta: GET / (cualquier otra ruta)
+  # Ruta: GET / (resto de rutas)
   # ─────────────────────────────────────────
   - name: GET /
     condition:
       method: GET
       pathRegex: /.*
     timeout: 1s
+    isRetryable: true
     responseClasses:
     - condition:
         status:
           min: 500
           max: 599
       isFailure: true
-    retryBudget:
-      retryRatio: 0.1
-      minRetriesPerSecond: 5
-      ttl: 10s
-
-# ─────────────────────────────────────────────────────────────────────────────
-# ¿Cómo funciona el Retry Budget?
-#
-# retryRatio: 0.2 → por cada 10 solicitudes normales, permite 2 reintentos
-# minRetriesPerSecond: 10 → siempre permite al menos 10 reintentos/seg
-#
-# Ejemplo:
-#   - 100 req/s llegan al backend
-#   - 30 fallan (30% error rate)
-#   - Linkerd puede reintentar 20 (retryRatio=0.2 × 100)
-#   - Éxito efectivo en UI: los 20 reintentos exitosos cuentan como éxitos
-#   - El success rate visible sube aunque el backend falle
-# ─────────────────────────────────────────────────────────────────────────────

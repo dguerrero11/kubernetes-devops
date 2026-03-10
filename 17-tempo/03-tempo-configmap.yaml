@@ -70,7 +70,7 @@ data:
         path: /var/tempo/generator/wal
         # Enviar métricas al Prometheus del módulo 10
         remote_write:
-          - url: http://prometheus.monitoring.svc.cluster.local:9090/api/v1/write
+          - url: http://prometheus-svc.monitoring.svc.cluster.local:9090/api/v1/write
             send_exemplars: true
             send_native_histograms: true
 

@@ -1,0 +1,158 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules-app
+  namespace: monitoring
+  labels:
+    app: prometheus
+    prometheus_rule: "true"
+data:
+  app.yml: |
+    groups:
+
+      # ──────────────────────────────────────────────────────────────
+      # GRUPO: Recording Rules
+      # Pre-calculan métricas costosas para acelerar dashboards y alertas
+      # Naming convention: level:metric:operations
+      # ──────────────────────────────────────────────────────────────
+      - name: recording.rules
+        interval: 30s
+        rules:
+
+          # Tasa de requests HTTP por namespace y job (últimos 5 min)
+          - record: namespace_job:http_requests_total:rate5m
+            expr: |
+              sum by (namespace, job, status_code) (
+                rate(http_requests_total[5m])
+              )
+
+          # Tasa de errores HTTP (solo 4xx y 5xx)
+          - record: namespace_job:http_errors_total:rate5m
+            expr: |
+              sum by (namespace, job) (
+                rate(http_requests_total{status_code=~"[45].."}[5m])
+              )
+
+          # Ratio de errores (0 a 1, donde 1 = 100% errores)
+          - record: namespace_job:http_error_ratio:rate5m
+            expr: |
+              namespace_job:http_errors_total:rate5m
+              /
+              sum by (namespace, job) (namespace_job:http_requests_total:rate5m)
+
+          # Latencia P99 por job
+          - record: namespace_job:http_request_duration_p99:rate5m
+            expr: |
+              histogram_quantile(0.99,
+                sum by (namespace, job, le) (
+                  rate(http_request_duration_seconds_bucket[5m])
+                )
+              )
+
+          # Latencia P95 por job
+          - record: namespace_job:http_request_duration_p95:rate5m
+            expr: |
+              histogram_quantile(0.95,
+                sum by (namespace, job, le) (
+                  rate(http_request_duration_seconds_bucket[5m])
+                )
+              )
+
+      # ──────────────────────────────────────────────────────────────
+      # GRUPO: Alertas de Aplicación
+      # ──────────────────────────────────────────────────────────────
+      - name: application.alerts
+        interval: 30s
+        rules:
+
+          # Tasa de errores alta (>10%)
+          - alert: HighErrorRate
+            expr: |
+              (
+                sum by (namespace, job) (
+                  rate(http_requests_total{status_code=~"5.."}[5m])
+                )
+                /
+                sum by (namespace, job) (
+                  rate(http_requests_total[5m])
+                )
+              ) > 0.10
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Alta tasa de errores en {{ $labels.job }}"
+              description: "El servicio {{ $labels.job }} en {{ $labels.namespace }} tiene {{ $value | humanizePercentage }} de errores HTTP 5xx en los últimos 5 minutos. Umbral: 10%."
+
+          # Tasa de errores crítica (>50%)
+          - alert: CriticalErrorRate
+            expr: |
+              (
+                sum by (namespace, job) (
+                  rate(http_requests_total{status_code=~"5.."}[5m])
+                )
+                /
+                sum by (namespace, job) (
+                  rate(http_requests_total[5m])
+                )
+              ) > 0.50
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "CRÍTICO: Mayoría de requests fallando en {{ $labels.job }}"
+              description: "El servicio {{ $labels.job }} tiene {{ $value | humanizePercentage }} de errores. El servicio está prácticamente caído."
+
+          # Latencia alta P99 > 1 segundo
+          - alert: HighLatencyP99
+            expr: |
+              histogram_quantile(0.99,
+                sum by (namespace, job, le) (
+                  rate(http_request_duration_seconds_bucket[5m])
+                )
+              ) > 1.0
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Latencia P99 alta en {{ $labels.job }}"
+              description: "El 99% de las peticiones a {{ $labels.job }} tardan más de {{ $value | humanizeDuration }}. Umbral: 1s."
+
+          # Latencia crítica P99 > 5 segundos
+          - alert: CriticalLatencyP99
+            expr: |
+              histogram_quantile(0.99,
+                sum by (namespace, job, le) (
+                  rate(http_request_duration_seconds_bucket[5m])
+                )
+              ) > 5.0
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "CRÍTICO: Latencia P99 muy alta en {{ $labels.job }}"
+              description: "El 99% de las peticiones a {{ $labels.job }} tardan más de {{ $value | humanizeDuration }}. Posible deadlock o saturación."
+
+          # Servicio sin tráfico (puede indicar problema de routing o app caída)
+          - alert: ServiceNoTraffic
+            expr: |
+              sum by (namespace, job) (
+                rate(http_requests_total[5m])
+              ) == 0
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Sin tráfico en {{ $labels.job }}"
+              description: "El servicio {{ $labels.job }} no ha recibido ninguna petición en los últimos 10 minutos. ¿Está el ingress/service configurado correctamente?"
+
+          # Demo chaos: detectar el modo caos activado
+          - alert: ChaosMode
+            expr: |
+              demo_chaos_mode == 1
+            for: 1m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Modo CAOS activo en demo-chaos"
+              description: "La aplicación demo-chaos tiene el modo caos habilitado. Tasa de error artificial activa."

@@ -1,0 +1,227 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: prometheus-rules-infra
+  namespace: monitoring
+  labels:
+    app: prometheus
+    # Este label hace que Prometheus cargue estas reglas automáticamente
+    prometheus: kube-prometheus
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# NOTA: Si NO usas el Prometheus Operator, aplicar como ConfigMap:
+# kubectl create configmap prometheus-rules-infra \
+#   --from-file=infra.yaml \
+#   -n monitoring
+# Y montar el ConfigMap en el Deployment de Prometheus.
+# El archivo 06-prometheus-config-patch.yaml lo hace automáticamente.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules-infra
+  namespace: monitoring
+  labels:
+    app: prometheus
+    prometheus_rule: "true"
+data:
+  infra.yml: |
+    groups:
+
+      # ──────────────────────────────────────────────────────────────
+      # GRUPO: Kubernetes Nodes
+      # ──────────────────────────────────────────────────────────────
+      - name: kubernetes.nodes
+        interval: 30s
+        rules:
+
+          # Watchdog: "heartbeat" del sistema de alertas
+          # Siempre debe estar FIRING — si deja de estar, algo falló
+          - alert: Watchdog
+            expr: vector(1)
+            labels:
+              severity: none
+            annotations:
+              summary: "Sistema de alertas operativo"
+              description: "Esta alerta confirma que Prometheus y AlertManager funcionan correctamente."
+
+          # Nodo no disponible
+          - alert: KubernetesNodeNotReady
+            expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Nodo {{ $labels.node }} no está Ready"
+              description: "El nodo {{ $labels.node }} lleva más de 5 minutos en estado NotReady. Verificar conectividad y estado del kubelet."
+
+          # Presión de memoria en nodo
+          - alert: KubernetesNodeMemoryPressure
+            expr: kube_node_status_condition{condition="MemoryPressure",status="true"} == 1
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Presión de memoria en nodo {{ $labels.node }}"
+              description: "El nodo {{ $labels.node }} tiene MemoryPressure. Puede haber evictions de pods inminentes."
+
+          # Presión de disco en nodo
+          - alert: KubernetesNodeDiskPressure
+            expr: kube_node_status_condition{condition="DiskPressure",status="true"} == 1
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Presión de disco en nodo {{ $labels.node }}"
+              description: "El nodo {{ $labels.node }} tiene DiskPressure. Limpiar imágenes no usadas o aumentar espacio."
+
+          # Uso de CPU del nodo alto
+          - alert: NodeCPUHighUsage
+            expr: |
+              100 - (avg by (instance) (
+                rate(node_cpu_seconds_total{mode="idle"}[5m])
+              ) * 100) > 85
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "CPU alta en {{ $labels.instance }}"
+              description: "El nodo {{ $labels.instance }} tiene {{ $value | printf \"%.1f\" }}% de uso de CPU durante más de 10 minutos."
+
+          # Uso de memoria del nodo alto
+          - alert: NodeMemoryHighUsage
+            expr: |
+              100 - (
+                node_memory_MemAvailable_bytes /
+                node_memory_MemTotal_bytes * 100
+              ) > 85
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Memoria alta en {{ $labels.instance }}"
+              description: "El nodo {{ $labels.instance }} usa {{ $value | printf \"%.1f\" }}% de memoria."
+
+          # Disco casi lleno (>85%)
+          - alert: NodeDiskAlmostFull
+            expr: |
+              (
+                node_filesystem_size_bytes{fstype!="tmpfs",mountpoint="/"} -
+                node_filesystem_free_bytes{fstype!="tmpfs",mountpoint="/"}
+              ) / node_filesystem_size_bytes{fstype!="tmpfs",mountpoint="/"} * 100 > 85
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Disco casi lleno en {{ $labels.instance }}"
+              description: "El disco raíz de {{ $labels.instance }} está al {{ $value | printf \"%.1f\" }}% de capacidad."
+
+          # Disco crítico (>95%)
+          - alert: NodeDiskCritical
+            expr: |
+              (
+                node_filesystem_size_bytes{fstype!="tmpfs",mountpoint="/"} -
+                node_filesystem_free_bytes{fstype!="tmpfs",mountpoint="/"}
+              ) / node_filesystem_size_bytes{fstype!="tmpfs",mountpoint="/"} * 100 > 95
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Disco CRÍTICO en {{ $labels.instance }}"
+              description: "El disco de {{ $labels.instance }} está al {{ $value | printf \"%.1f\" }}%. ACCIÓN INMEDIATA REQUERIDA."
+
+      # ──────────────────────────────────────────────────────────────
+      # GRUPO: Kubernetes Pods y Deployments
+      # ──────────────────────────────────────────────────────────────
+      - name: kubernetes.workloads
+        interval: 30s
+        rules:
+
+          # Pod en CrashLoopBackOff
+          - alert: KubernetesPodCrashLooping
+            expr: |
+              increase(kube_pod_container_status_restarts_total[15m]) > 3
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} en CrashLoop"
+              description: "El contenedor {{ $labels.container }} del pod {{ $labels.pod }} se ha reiniciado {{ $value }} veces en los últimos 15 minutos."
+
+          # Pod no Running y no completado
+          - alert: KubernetesPodNotRunning
+            expr: |
+              kube_pod_status_phase{phase!~"Running|Succeeded"} == 1
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} no está Running"
+              description: "El pod {{ $labels.pod }} lleva más de 10 minutos en fase {{ $labels.phase }}."
+
+          # Deployment con pods no disponibles
+          - alert: KubernetesDeploymentUnavailable
+            expr: |
+              kube_deployment_status_replicas_unavailable > 0
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} tiene réplicas no disponibles"
+              description: "{{ $value }} réplicas del deployment {{ $labels.deployment }} no están disponibles."
+
+          # Deployment sin réplicas disponibles (crítico)
+          - alert: KubernetesDeploymentDown
+            expr: |
+              kube_deployment_status_replicas_available == 0
+              and
+              kube_deployment_spec_replicas > 0
+            for: 2m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} SIN réplicas"
+              description: "El deployment {{ $labels.deployment }} no tiene ninguna réplica disponible. Servicio caído."
+
+      # ──────────────────────────────────────────────────────────────
+      # GRUPO: Stack de Observabilidad
+      # ──────────────────────────────────────────────────────────────
+      - name: observability.stack
+        interval: 60s
+        rules:
+
+          - alert: PrometheusDown
+            expr: absent(up{job="prometheus"})
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Prometheus no disponible"
+              description: "No se puede acceder a Prometheus. El sistema de monitoreo está caído."
+
+          - alert: GrafanaDown
+            expr: absent(up{job="grafana"})
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Grafana no disponible"
+              description: "Grafana no responde. Los dashboards no están accesibles."
+
+          - alert: LokiDown
+            expr: absent(up{job="loki"})
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Loki no disponible"
+              description: "Loki no responde. Los logs no están siendo almacenados."
+
+          - alert: TempoDown
+            expr: absent(up{job="tempo"})
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Tempo no disponible"
+              description: "Tempo no responde. Las trazas no están siendo almacenadas."

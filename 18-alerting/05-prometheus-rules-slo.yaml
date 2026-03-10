@@ -1,0 +1,147 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules-slo
+  namespace: monitoring
+  labels:
+    app: prometheus
+    prometheus_rule: "true"
+data:
+  slo.yml: |
+    # ──────────────────────────────────────────────────────────────────
+    # SLO: Service Level Objectives
+    #
+    # Concepto:
+    #   SLI: la métrica que mides (ej: tasa de éxito de requests)
+    #   SLO: el objetivo (ej: disponibilidad >= 99.5%)
+    #   Error Budget: cuánto "margen de error" tienes (0.5% del tiempo)
+    #
+    # Estrategia: Multi-Window, Multi-Burn-Rate (Google SRE approach)
+    #   En lugar de alertar cuando el SLO se rompe (demasiado tarde),
+    #   alerta cuando la tasa de consumo del error budget es demasiado
+    #   alta (burn rate), de forma que puedes actuar a tiempo.
+    #
+    # SLO definido: 99.5% disponibilidad en ventana de 30 días
+    # Error budget: 0.5% × 30 días × 24h × 60m = 216 minutos/mes
+    # ──────────────────────────────────────────────────────────────────
+
+    groups:
+
+      # ──────────────────────────────────────────────────────────────
+      # Recording Rules para SLO
+      # ──────────────────────────────────────────────────────────────
+      - name: slo.recording
+        interval: 30s
+        rules:
+
+          # SLI: tasa de éxito (1 - tasa de error) para la app demo
+          - record: job:slo_availability:rate5m
+            expr: |
+              1 - (
+                sum by (job) (rate(http_requests_total{status_code=~"5..", job="demo-chaos"}[5m]))
+                /
+                sum by (job) (rate(http_requests_total{job="demo-chaos"}[5m]) > 0)
+              )
+
+          # Error rate en ventana corta (5m) para burn rate
+          - record: job:error_rate:rate5m
+            expr: |
+              sum by (job) (rate(http_requests_total{status_code=~"5..", job="demo-chaos"}[5m]))
+              /
+              sum by (job) (rate(http_requests_total{job="demo-chaos"}[5m]) > 0)
+
+          # Error rate en ventana larga (1h) para tendencia
+          - record: job:error_rate:rate1h
+            expr: |
+              sum by (job) (rate(http_requests_total{status_code=~"5..", job="demo-chaos"}[1h]))
+              /
+              sum by (job) (rate(http_requests_total{job="demo-chaos"}[1h]) > 0)
+
+          # Error rate en ventana de 6h para error budget
+          - record: job:error_rate:rate6h
+            expr: |
+              sum by (job) (rate(http_requests_total{status_code=~"5..", job="demo-chaos"}[6h]))
+              /
+              sum by (job) (rate(http_requests_total{job="demo-chaos"}[6h]) > 0)
+
+          # Burn rate: qué tan rápido consumimos el error budget
+          # Objetivo: 0.5% error budget en 30 días
+          # Burn rate = 1 → consumimos el budget exactamente en 30 días
+          # Burn rate = 14.4 → lo consumimos en 2 horas (alerta crítica)
+          # Burn rate = 6 → lo consumimos en 5 horas (alerta warning)
+          - record: job:error_budget_burn_rate:rate5m
+            expr: |
+              job:error_rate:rate5m / 0.005
+
+          - record: job:error_budget_burn_rate:rate1h
+            expr: |
+              job:error_rate:rate1h / 0.005
+
+          # Error budget restante (% de los 216 minutos que quedan)
+          # Aproximación usando el consumo de las últimas 6 horas
+          - record: job:error_budget_remaining:ratio
+            expr: |
+              1 - (
+                job:error_rate:rate6h / 0.005 * (6 / 720)
+              )
+
+      # ──────────────────────────────────────────────────────────────
+      # Alertas SLO (Multi-Window, Multi-Burn-Rate)
+      # Siguiendo la estrategia del libro "SRE Workbook" de Google
+      # ──────────────────────────────────────────────────────────────
+      - name: slo.alerts
+        rules:
+
+          # PÁGINA (crítico): burn rate muy alto en ventana corta Y larga
+          # Significa: si sigue así, el SLO se romperá en ~2 horas
+          # Burn rate 14.4 = consume el budget mensual en 2 horas
+          - alert: SLOErrorBudgetBurnRateCritical
+            expr: |
+              (job:error_budget_burn_rate:rate5m > 14.4)
+              and
+              (job:error_budget_burn_rate:rate1h > 14.4)
+            for: 2m
+            labels:
+              severity: critical
+              slo: availability
+            annotations:
+              summary: "🔥 SLO CRÍTICO: Error budget agotándose rápidamente en {{ $labels.job }}"
+              description: |
+                Burn rate actual: {{ $value | printf "%.1f" }}x (umbral crítico: 14.4x)
+                Al ritmo actual, el error budget mensual se agotará en ~2 horas.
+                SLO objetivo: 99.5% disponibilidad.
+                Acción requerida INMEDIATA.
+
+          # TICKET (warning): burn rate moderado sostenido
+          # Significa: el SLO se romperá en ~5 horas si no se actúa
+          # Burn rate 6 = consume el budget mensual en 5 horas
+          - alert: SLOErrorBudgetBurnRateWarning
+            expr: |
+              (job:error_budget_burn_rate:rate5m > 6)
+              and
+              (job:error_budget_burn_rate:rate1h > 6)
+            for: 15m
+            labels:
+              severity: warning
+              slo: availability
+            annotations:
+              summary: "⚠️ SLO WARNING: Error budget consumiéndose en {{ $labels.job }}"
+              description: |
+                Burn rate actual: {{ $value | printf "%.1f" }}x (umbral warning: 6x)
+                Al ritmo actual, el error budget mensual se agotará en ~5 horas.
+                SLO objetivo: 99.5% disponibilidad.
+                Revisar y actuar en la próxima hora.
+
+          # INFO: error budget por debajo del 10% restante
+          - alert: SLOErrorBudgetAlmostExhausted
+            expr: |
+              job:error_budget_remaining:ratio < 0.10
+            for: 5m
+            labels:
+              severity: warning
+              slo: availability
+            annotations:
+              summary: "Error budget al {{ $value | humanizePercentage }} restante para {{ $labels.job }}"
+              description: |
+                Menos del 10% del error budget mensual queda disponible.
+                Considerar un feature freeze hasta que se reponga el budget.

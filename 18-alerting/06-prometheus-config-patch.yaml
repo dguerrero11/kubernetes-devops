@@ -1,0 +1,183 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+  labels:
+    app: prometheus
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+      external_labels:
+        cluster: kubernetes-devops
+        environment: learning
+
+    # ──────────────────────────────────────────────────────────────
+    # ALERTING: conectar Prometheus con AlertManager
+    # ──────────────────────────────────────────────────────────────
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets:
+                - alertmanager.monitoring.svc.cluster.local:9093
+          timeout: 10s
+          api_version: v2
+
+    # ──────────────────────────────────────────────────────────────
+    # RULE FILES: cargar archivos de reglas (alertas + recording)
+    # Los ConfigMaps de reglas se montan en /etc/prometheus/rules/
+    # ──────────────────────────────────────────────────────────────
+    rule_files:
+      - /etc/prometheus/rules/*.yml
+      - /etc/prometheus/rules/*.yaml
+
+    # ──────────────────────────────────────────────────────────────
+    # SCRAPE CONFIGS: qué targets monitorear
+    # ──────────────────────────────────────────────────────────────
+    scrape_configs:
+
+      # Auto-descubrimiento de pods con annotation prometheus.io/scrape=true
+      - job_name: kubernetes-pods
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: job
+
+      # Prometheus en sí mismo
+      - job_name: prometheus
+        static_configs:
+          - targets: ['localhost:9090']
+
+      # AlertManager
+      - job_name: alertmanager
+        static_configs:
+          - targets: ['alertmanager.monitoring.svc.cluster.local:9093']
+
+      # Grafana
+      - job_name: grafana
+        static_configs:
+          - targets: ['grafana.monitoring.svc.cluster.local:3000']
+
+      # Node Exporter (métricas de hardware)
+      - job_name: node-exporter
+        kubernetes_sd_configs:
+          - role: node
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.+)
+          - source_labels: [__address__]
+            action: replace
+            regex: ([^:]+)(?::\d+)?
+            replacement: $1:9100
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_node_name]
+            target_label: instance
+
+      # Loki
+      - job_name: loki
+        static_configs:
+          - targets: ['loki.monitoring.svc.cluster.local:3100']
+
+      # Tempo
+      - job_name: tempo
+        static_configs:
+          - targets: ['tempo.monitoring.svc.cluster.local:3200']
+
+      # OTel Collector
+      - job_name: otel-collector
+        static_configs:
+          - targets: ['otel-collector.monitoring.svc.cluster.local:8889']
+
+      # kube-state-metrics (si está instalado)
+      - job_name: kube-state-metrics
+        static_configs:
+          - targets: ['kube-state-metrics.monitoring.svc.cluster.local:8080']
+
+      # Demo chaos app
+      - job_name: demo-chaos
+        static_configs:
+          - targets: ['demo-chaos-svc.monitoring.svc.cluster.local:8080']
+        metrics_path: /metrics
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# Deployment patch: montar los ConfigMaps de reglas como volumen adicional
+#
+# INSTRUCCIÓN: Aplicar este patch al deployment de Prometheus del módulo 10
+# kubectl patch deployment prometheus -n monitoring --patch-file prometheus-patch.json
+# ──────────────────────────────────────────────────────────────────────────────
+# El siguiente script aplica el patch automáticamente:
+#
+# kubectl patch deployment prometheus -n monitoring \
+#   --type=json \
+#   -p='[
+#     {
+#       "op": "add",
+#       "path": "/spec/template/spec/volumes/-",
+#       "value": {
+#         "name": "rules-infra",
+#         "configMap": {"name": "prometheus-rules-infra"}
+#       }
+#     },
+#     {
+#       "op": "add",
+#       "path": "/spec/template/spec/volumes/-",
+#       "value": {
+#         "name": "rules-app",
+#         "configMap": {"name": "prometheus-rules-app"}
+#       }
+#     },
+#     {
+#       "op": "add",
+#       "path": "/spec/template/spec/volumes/-",
+#       "value": {
+#         "name": "rules-slo",
+#         "configMap": {"name": "prometheus-rules-slo"}
+#       }
+#     },
+#     {
+#       "op": "add",
+#       "path": "/spec/template/spec/containers/0/volumeMounts/-",
+#       "value": {
+#         "name": "rules-infra",
+#         "mountPath": "/etc/prometheus/rules/infra.yml",
+#         "subPath": "infra.yml"
+#       }
+#     },
+#     {
+#       "op": "add",
+#       "path": "/spec/template/spec/containers/0/volumeMounts/-",
+#       "value": {
+#         "name": "rules-app",
+#         "mountPath": "/etc/prometheus/rules/app.yml",
+#         "subPath": "app.yml"
+#       }
+#     },
+#     {
+#       "op": "add",
+#       "path": "/spec/template/spec/containers/0/volumeMounts/-",
+#       "value": {
+#         "name": "rules-slo",
+#         "mountPath": "/etc/prometheus/rules/slo.yml",
+#         "subPath": "slo.yml"
+#       }
+#     }
+#   ]'

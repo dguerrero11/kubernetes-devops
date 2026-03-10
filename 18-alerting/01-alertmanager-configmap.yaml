@@ -1,0 +1,157 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alertmanager-config
+  namespace: monitoring
+  labels:
+    app: alertmanager
+data:
+  alertmanager.yml: |
+    # ──────────────────────────────────────────────────────────────────
+    # AlertManager Configuration
+    # ──────────────────────────────────────────────────────────────────
+
+    global:
+      # Tiempo de espera antes de marcar una alerta como "resuelta"
+      # si deja de llegar de Prometheus
+      resolve_timeout: 5m
+
+      # Configuración SMTP (opcional, para alertas por email)
+      # smtp_smarthost: 'smtp.gmail.com:587'
+      # smtp_from: 'alertmanager@devops-lab.local'
+      # smtp_auth_username: 'usuario@gmail.com'
+      # smtp_auth_password: 'app-password'
+
+    # ──────────────────────────────────────────────────────────────────
+    # TEMPLATES: personalizar el formato de las notificaciones
+    # ──────────────────────────────────────────────────────────────────
+    templates:
+      - '/etc/alertmanager/templates/*.tmpl'
+
+    # ──────────────────────────────────────────────────────────────────
+    # ROUTING: árbol de decisiones para enrutar alertas
+    # Cada alerta recorre el árbol hasta encontrar su receptor
+    # ──────────────────────────────────────────────────────────────────
+    route:
+      # Receptor por defecto (si ninguna ruta específica aplica)
+      receiver: webhook-demo
+
+      # Agrupar alertas similares en una sola notificación
+      # Evita el "alert storm" (miles de alertas del mismo problema)
+      group_by:
+        - alertname
+        - namespace
+        - severity
+
+      # Tiempo de espera para agrupar alertas del mismo grupo
+      # antes de enviar la primera notificación
+      group_wait: 30s
+
+      # Tiempo de espera para enviar nuevas alertas al mismo grupo
+      group_interval: 5m
+
+      # Tiempo de espera antes de re-enviar una alerta ya notificada
+      repeat_interval: 4h
+
+      # Rutas específicas (más específicas primero)
+      routes:
+        # Alerta "Watchdog": es el "heartbeat" de Prometheus
+        # Siempre está FIRING para confirmar que el sistema funciona
+        # La enviamos a "null" para no recibir notificaciones de esta
+        - matchers:
+            - alertname = "Watchdog"
+          receiver: "null"
+
+        # Alertas CRÍTICAS: notificación rápida, repetir cada hora
+        - matchers:
+            - severity = "critical"
+          receiver: webhook-demo
+          group_wait: 10s
+          repeat_interval: 1h
+          # continuar: también evalúa rutas siguientes (si se quisiera)
+          continue: false
+
+        # Alertas WARNING: menos urgentes, notificación más espaciada
+        - matchers:
+            - severity = "warning"
+          receiver: webhook-demo
+          group_wait: 1m
+          repeat_interval: 4h
+
+        # Alertas del stack de observabilidad: siempre notificar rápido
+        - matchers:
+            - alertname =~ ".*Down$"
+          receiver: webhook-demo
+          group_wait: 15s
+          repeat_interval: 30m
+
+    # ──────────────────────────────────────────────────────────────────
+    # INHIBITION: suprimir alertas menos graves cuando hay una grave
+    # Ejemplo: si el nodo está down, no notificar también que los pods
+    # están down (es consecuencia del nodo)
+    # ──────────────────────────────────────────────────────────────────
+    inhibit_rules:
+      # Si hay alerta crítica, inhibir la warning del mismo componente
+      - source_matchers:
+          - severity = "critical"
+        target_matchers:
+          - severity = "warning"
+        equal:
+          - alertname
+          - namespace
+          - pod
+
+      # Si el nodo está down, inhibir alertas de sus pods
+      - source_matchers:
+          - alertname = "KubernetesNodeNotReady"
+        target_matchers:
+          - alertname = "KubernetesPodNotRunning"
+        equal:
+          - node
+
+    # ──────────────────────────────────────────────────────────────────
+    # RECEIVERS: dónde enviar las notificaciones
+    # ──────────────────────────────────────────────────────────────────
+    receivers:
+      # Receptor nulo: descarta las alertas (para Watchdog)
+      - name: "null"
+
+      # Receptor principal: webhook al servidor de demo
+      - name: webhook-demo
+        webhook_configs:
+          - url: 'http://webhook-receiver.monitoring.svc.cluster.local:5001/alerts'
+            send_resolved: true   # Notificar también cuando se resuelve
+            max_alerts: 10        # Máximo de alertas por payload
+            http_config:
+              follow_redirects: true
+
+      # Ejemplo de receptor Slack (comentado)
+      # - name: slack-ops
+      #   slack_configs:
+      #     - api_url: 'https://hooks.slack.com/services/XXX/YYY/ZZZ'
+      #       channel: '#alerts'
+      #       title: '{{ template "slack.title" . }}'
+      #       text: '{{ template "slack.text" . }}'
+      #       send_resolved: true
+
+      # Ejemplo de receptor email (comentado)
+      # - name: email-ops
+      #   email_configs:
+      #     - to: 'ops-team@empresa.com'
+      #       subject: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+      #       body: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+      #       send_resolved: true
+
+  # Template para notificaciones (se puede personalizar)
+  default.tmpl: |
+    {{ define "webhook.default.message" }}
+    [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}]
+    {{ .CommonLabels.alertname }}
+    Severity: {{ .CommonLabels.severity }}
+    Namespace: {{ .CommonLabels.namespace }}
+    {{ range .Alerts }}
+    - {{ .Annotations.summary }}
+      {{ .Annotations.description }}
+      Started: {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+    {{ end }}
+    {{ end }}

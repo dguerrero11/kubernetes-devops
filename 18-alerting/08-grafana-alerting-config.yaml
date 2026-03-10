@@ -1,0 +1,171 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-alerting-config
+  namespace: monitoring
+  labels:
+    app: grafana
+    # Grafana carga automáticamente provisioning con este label
+    grafana_datasource: "1"
+data:
+  # ──────────────────────────────────────────────────────────────────
+  # Contact Points: dónde enviar notificaciones desde Grafana Alerting
+  # Grafana tiene su propio motor de alertas (Unified Alerting)
+  # que puede alertar sobre Prometheus, Loki y Tempo
+  # ──────────────────────────────────────────────────────────────────
+  alerting-contact-points.yaml: |
+    apiVersion: 1
+    contactPoints:
+      - orgId: 1
+        name: webhook-demo
+        receivers:
+          - uid: webhook-demo-uid
+            type: webhook
+            settings:
+              url: http://webhook-receiver-svc.monitoring.svc.cluster.local:5001/alerts
+              httpMethod: POST
+              username: ""
+              password: ""
+            disableResolveMessage: false
+
+  # Notification policy: routing de alertas de Grafana
+  alerting-notification-policy.yaml: |
+    apiVersion: 1
+    policies:
+      - orgId: 1
+        receiver: webhook-demo
+        group_by:
+          - grafana_folder
+          - alertname
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 4h
+        routes:
+          - receiver: webhook-demo
+            matchers:
+              - severity =~ "critical|warning"
+            group_wait: 10s
+            repeat_interval: 1h
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# Grafana Unified Alerting: Reglas de alerta definidas como ConfigMap
+# Estas alertas se evalúan en Grafana y pueden usar cualquier datasource
+# (Prometheus, Loki, Tempo) — no solo Prometheus
+# ──────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-alert-rules
+  namespace: monitoring
+  labels:
+    app: grafana
+data:
+  alert-rules.yaml: |
+    apiVersion: 1
+    groups:
+      # Carpeta: Infrastructure Alerts
+      - orgId: 1
+        name: Infrastructure
+        folder: Kubernetes DevOps
+        interval: 1m
+        rules:
+
+          # Alerta basada en Prometheus (clasica)
+          - uid: node-cpu-alert
+            title: "Nodo CPU Alta"
+            condition: C
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: prometheus
+                model:
+                  expr: |
+                    100 - (avg by (instance) (
+                      rate(node_cpu_seconds_total{mode="idle"}[5m])
+                    ) * 100)
+                  intervalMs: 1000
+                  maxDataPoints: 43200
+                  refId: A
+              - refId: C
+                relativeTimeRange:
+                  from: 600
+                  to: 0
+                datasourceUid: "-100"
+                model:
+                  conditions:
+                    - evaluator:
+                        params: [85]
+                        type: gt
+                      operator:
+                        type: and
+                      query:
+                        params: [A]
+                      reducer:
+                        type: last
+                      type: query
+                  refId: C
+                  type: classic_conditions
+            noDataState: NoData
+            execErrState: Alerting
+            for: 10m
+            labels:
+              severity: warning
+              source: grafana
+            annotations:
+              summary: "CPU alta en {{ $labels.instance }}"
+              description: "CPU al {{ $values.A.Value | printf \"%.1f\" }}%"
+
+      # Carpeta: Application Alerts (usando Loki)
+      - orgId: 1
+        name: Application Logs
+        folder: Kubernetes DevOps
+        interval: 2m
+        rules:
+
+          # Alerta sobre LOGS de Loki: muchos errores en los últimos 5 min
+          - uid: loki-error-rate
+            title: "Muchos errores en logs (Loki)"
+            condition: C
+            data:
+              - refId: A
+                relativeTimeRange:
+                  from: 300
+                  to: 0
+                datasourceUid: loki
+                model:
+                  expr: |
+                    sum(count_over_time(
+                      {namespace="monitoring"} | json | level="ERROR" [5m]
+                    ))
+                  refId: A
+              - refId: C
+                relativeTimeRange:
+                  from: 300
+                  to: 0
+                datasourceUid: "-100"
+                model:
+                  conditions:
+                    - evaluator:
+                        params: [20]   # Más de 20 errores en 5 minutos
+                        type: gt
+                      operator:
+                        type: and
+                      query:
+                        params: [A]
+                      reducer:
+                        type: last
+                      type: query
+                  refId: C
+                  type: classic_conditions
+            noDataState: NoData
+            execErrState: Alerting
+            for: 2m
+            labels:
+              severity: warning
+              source: grafana
+              signal: logs
+            annotations:
+              summary: "Alta tasa de errores detectada en logs"
+              description: "Se detectaron {{ $values.A.Value }} mensajes de ERROR en logs en los últimos 5 minutos (namespace: monitoring)"

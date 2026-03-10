@@ -1,0 +1,191 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: monitoring
+  labels:
+    app: otel-collector
+data:
+  otelcol.yaml: |
+    # ──────────────────────────────────────────────────────────────────
+    # OpenTelemetry Collector — Configuración completa
+    #
+    # Arquitectura: Receivers → Processors → Exporters
+    #
+    # Recibe trazas de las apps, las procesa y las envía a Tempo.
+    # También puede reenviar métricas a Prometheus y logs a Loki.
+    # ──────────────────────────────────────────────────────────────────
+
+    # ──────────────────────────────────────────────────────────────────
+    # RECEIVERS: cómo recibe telemetría el Collector
+    # ──────────────────────────────────────────────────────────────────
+    receivers:
+
+      # OTLP: protocolo nativo de OpenTelemetry (recomendado)
+      # Las apps con SDK de OTel envían aquí directamente
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+            cors:
+              allowed_origins:
+                - "http://*"
+                - "https://*"
+
+      # Jaeger: compatibilidad con apps legacy
+      jaeger:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:14250
+          thrift_http:
+            endpoint: 0.0.0.0:14268
+
+      # Zipkin: compatibilidad con apps Spring Boot
+      zipkin:
+        endpoint: 0.0.0.0:9411
+
+      # Prometheus: scrape métricas del propio Collector (para diagnóstico)
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: otel-collector
+              scrape_interval: 30s
+              static_configs:
+                - targets: ["localhost:8888"]
+
+    # ──────────────────────────────────────────────────────────────────
+    # PROCESSORS: transforman y enriquecen la telemetría
+    # ──────────────────────────────────────────────────────────────────
+    processors:
+
+      # Batch: agrupa spans para envío eficiente
+      # No enviar span a span → agrupar y enviar en lotes
+      batch:
+        timeout: 5s
+        send_batch_size: 1024
+        send_batch_max_size: 2048
+
+      # Memory limiter: evita que el Collector consuma demasiada RAM
+      memory_limiter:
+        limit_mib: 400
+        spike_limit_mib: 100
+        check_interval: 5s
+
+      # Resource: enriquecer trazas con metadatos del cluster
+      resource:
+        attributes:
+          - action: insert
+            key: cluster
+            value: kubernetes-devops
+          - action: insert
+            key: environment
+            value: learning
+
+      # Resource Detection: detecta automáticamente atributos del pod/nodo
+      resourcedetection:
+        detectors:
+          - env          # Variables de entorno OTEL_RESOURCE_*
+          - k8snode      # Información del nodo de Kubernetes
+        timeout: 5s
+        override: false
+
+      # K8s Attributes: agrega metadatos de Kubernetes a los spans
+      # (namespace, deployment, pod name, etc.)
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        filter:
+          node_from_env_var: KUBE_NODE_NAME
+        extract:
+          metadata:
+            - k8s.pod.name
+            - k8s.pod.uid
+            - k8s.deployment.name
+            - k8s.namespace.name
+            - k8s.node.name
+            - k8s.pod.start_time
+        pod_association:
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.ip
+          - sources:
+              - from: connection
+
+    # ──────────────────────────────────────────────────────────────────
+    # EXPORTERS: dónde enviar la telemetría procesada
+    # ──────────────────────────────────────────────────────────────────
+    exporters:
+
+      # Tempo: destino principal para trazas
+      otlp/tempo:
+        endpoint: tempo.monitoring.svc.cluster.local:4317
+        tls:
+          insecure: true
+
+      # Prometheus: exportar métricas generadas por el Collector
+      prometheus:
+        endpoint: "0.0.0.0:8889"
+        namespace: otelcol
+
+      # Debug: loguear trazas en consola (útil para troubleshooting)
+      # Cambiar verbosity a "detailed" para ver spans completos
+      debug:
+        verbosity: normal
+        sampling_initial: 5       # Log de los primeros 5 spans
+        sampling_thereafter: 200  # Luego 1 de cada 200
+
+    # ──────────────────────────────────────────────────────────────────
+    # EXTENSIONS: funcionalidades adicionales del Collector
+    # ──────────────────────────────────────────────────────────────────
+    extensions:
+      # Health check endpoint (para readiness/liveness probes)
+      health_check:
+        endpoint: 0.0.0.0:13133
+      # Performance profiling (pprof)
+      pprof:
+        endpoint: 0.0.0.0:1777
+      # Métricas internas del Collector
+      zpages:
+        endpoint: 0.0.0.0:55679
+
+    # ──────────────────────────────────────────────────────────────────
+    # SERVICE: conecta receivers → processors → exporters
+    # ──────────────────────────────────────────────────────────────────
+    service:
+      extensions: [health_check, pprof, zpages]
+      pipelines:
+
+        # Pipeline de TRAZAS: recibir → procesar → enviar a Tempo
+        traces:
+          receivers:
+            - otlp
+            - jaeger
+            - zipkin
+          processors:
+            - memory_limiter
+            - k8sattributes
+            - resource
+            - batch
+          exporters:
+            - otlp/tempo
+            - debug
+
+        # Pipeline de MÉTRICAS: métricas del propio Collector
+        metrics:
+          receivers:
+            - prometheus
+          processors:
+            - memory_limiter
+            - batch
+          exporters:
+            - prometheus
+
+      # Telemetría interna del Collector (para diagnóstico)
+      telemetry:
+        logs:
+          level: info
+        metrics:
+          level: basic
+          address: 0.0.0.0:8888

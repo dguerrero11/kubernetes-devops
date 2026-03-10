@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: tempo
+  namespace: monitoring
+  labels:
+    app: tempo
+spec:
+  type: ClusterIP
+  selector:
+    app: tempo
+  ports:
+    # API HTTP (Grafana conecta aquí para buscar trazas)
+    - name: http
+      port: 3200
+      targetPort: http
+      protocol: TCP
+    # OTLP gRPC (apps y OTel Collector envían trazas aquí)
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+      protocol: TCP
+    # OTLP HTTP
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+      protocol: TCP
+    # Jaeger gRPC (apps legacy con SDK Jaeger)
+    - name: jaeger-grpc
+      port: 14250
+      targetPort: jaeger-grpc
+      protocol: TCP
+    # Jaeger Thrift HTTP
+    - name: jaeger-http
+      port: 14268
+      targetPort: jaeger-http
+      protocol: TCP
+    # Zipkin (apps Spring Boot legacy)
+    - name: zipkin
+      port: 9411
+      targetPort: zipkin
+      protocol: TCP

@@ -1,0 +1,136 @@
+# ServiceAccount para que el OTel Collector pueda leer metadatos de pods
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-collector
+  namespace: monitoring
+  labels:
+    app: otel-collector
+---
+# ClusterRole: necesita leer pods/nodes para el k8sattributes processor
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: otel-collector
+  labels:
+    app: otel-collector
+rules:
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - nodes/proxy
+      - pods
+      - endpoints
+      - services
+      - namespaces
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups: ["apps"]
+    resources:
+      - replicasets
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: otel-collector
+  labels:
+    app: otel-collector
+subjects:
+  - kind: ServiceAccount
+    name: otel-collector
+    namespace: monitoring
+roleRef:
+  kind: ClusterRole
+  name: otel-collector
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: monitoring
+  labels:
+    app: otel-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8889"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: otel-collector
+
+      containers:
+        - name: otel-collector
+          # otelcol-contrib incluye todos los receivers/processors/exporters
+          image: otel/opentelemetry-collector-contrib:0.89.0
+          args:
+            - --config=/etc/otelcol/otelcol.yaml
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317       # OTLP gRPC
+            - name: otlp-http
+              containerPort: 4318       # OTLP HTTP
+            - name: jaeger-grpc
+              containerPort: 14250      # Jaeger gRPC
+            - name: jaeger-http
+              containerPort: 14268      # Jaeger Thrift HTTP
+            - name: zipkin
+              containerPort: 9411       # Zipkin
+            - name: prom-metrics
+              containerPort: 8889       # Métricas Prometheus del Collector
+            - name: internal-metrics
+              containerPort: 8888       # Métricas internas
+            - name: health
+              containerPort: 13133      # Health check
+            - name: zpages
+              containerPort: 55679      # zPages diagnóstico
+          readinessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: health
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          env:
+            # Para el k8sattributes processor (detectar el nodo)
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            # Para el resourcedetection processor
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.name=otel-collector,deployment.environment=learning"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otelcol
+
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector-config

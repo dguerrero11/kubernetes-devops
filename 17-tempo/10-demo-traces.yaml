@@ -1,0 +1,304 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Demo de Trazas Distribuidas
+#
+# Simula una arquitectura real de microservicios:
+#   frontend → backend-api → database-simulator
+#
+# Todos los servicios tienen OpenTelemetry SDK y generan trazas reales
+# que se propagan entre servicios via HTTP headers (W3C TraceContext)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Servicio 1: BACKEND API (genera y recibe trazas)
+# Simula una API REST con latencias variables y algunos errores
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-backend
+  namespace: monitoring
+  labels:
+    app: demo-backend
+    tier: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-backend
+  template:
+    metadata:
+      labels:
+        app: demo-backend
+    spec:
+      containers:
+        - name: backend
+          image: python:3.11-slim
+          command:
+            - sh
+            - -c
+            - |
+              pip install flask opentelemetry-sdk opentelemetry-instrumentation-flask \
+                opentelemetry-exporter-otlp-proto-grpc --quiet 2>&1 | tail -3
+              cat > /app.py << 'PYEOF'
+              import os, time, random
+              from flask import Flask, jsonify, request
+              from opentelemetry import trace
+              from opentelemetry.sdk.trace import TracerProvider
+              from opentelemetry.sdk.trace.export import BatchSpanProcessor
+              from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+              from opentelemetry.sdk.resources import Resource
+              from opentelemetry.instrumentation.flask import FlaskInstrumentor
+
+              # Configurar OTel
+              resource = Resource.create({
+                "service.name": "demo-backend",
+                "service.version": "1.0.0",
+                "deployment.environment": "learning"
+              })
+              provider = TracerProvider(resource=resource)
+              exporter = OTLPSpanExporter(
+                endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector.monitoring.svc.cluster.local:4317"),
+                insecure=True
+              )
+              provider.add_span_processor(BatchSpanProcessor(exporter))
+              trace.set_tracer_provider(provider)
+              tracer = trace.get_tracer("demo-backend")
+
+              app = Flask(__name__)
+              FlaskInstrumentor().instrument_app(app)
+
+              @app.route("/api/users/<user_id>")
+              def get_user(user_id):
+                with tracer.start_as_current_span("db.query.user") as span:
+                  span.set_attribute("db.type", "postgresql")
+                  span.set_attribute("db.statement", f"SELECT * FROM users WHERE id={user_id}")
+                  span.set_attribute("user.id", user_id)
+                  # Simular latencia de DB (20-150ms)
+                  time.sleep(random.uniform(0.02, 0.15))
+                  # Simular 10% de errores
+                  if random.random() < 0.10:
+                    span.set_status(trace.StatusCode.ERROR, "User not found")
+                    return jsonify({"error": "user not found"}), 404
+                  return jsonify({"id": user_id, "name": f"User_{user_id}", "status": "active"})
+
+              @app.route("/api/products")
+              def get_products():
+                with tracer.start_as_current_span("db.query.products") as span:
+                  span.set_attribute("db.type", "postgresql")
+                  span.set_attribute("db.rows_returned", random.randint(10, 100))
+                  # Simular query lenta ocasional
+                  if random.random() < 0.15:
+                    span.set_attribute("db.slow_query", True)
+                    time.sleep(random.uniform(0.5, 2.0))  # Slow query!
+                  else:
+                    time.sleep(random.uniform(0.01, 0.05))
+                  return jsonify({"products": [f"product_{i}" for i in range(5)], "total": 5})
+
+              @app.route("/health")
+              def health():
+                return jsonify({"status": "ok", "service": "demo-backend"})
+
+              if __name__ == "__main__":
+                app.run(host="0.0.0.0", port=8080)
+              PYEOF
+              python /app.py
+          ports:
+            - containerPort: 8080
+          env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.monitoring.svc.cluster.local:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "demo-backend"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-backend-svc
+  namespace: monitoring
+  labels:
+    app: demo-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: demo-backend
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# Servicio 2: FRONTEND (llama al backend y propaga el trace context)
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-frontend
+  namespace: monitoring
+  labels:
+    app: demo-frontend
+    tier: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-frontend
+  template:
+    metadata:
+      labels:
+        app: demo-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: python:3.11-slim
+          command:
+            - sh
+            - -c
+            - |
+              pip install flask opentelemetry-sdk opentelemetry-instrumentation-flask \
+                opentelemetry-instrumentation-requests opentelemetry-exporter-otlp-proto-grpc \
+                requests --quiet 2>&1 | tail -3
+              cat > /app.py << 'PYEOF'
+              import os, time, random, requests as req
+              from flask import Flask, jsonify
+              from opentelemetry import trace
+              from opentelemetry.sdk.trace import TracerProvider
+              from opentelemetry.sdk.trace.export import BatchSpanProcessor
+              from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+              from opentelemetry.sdk.resources import Resource
+              from opentelemetry.instrumentation.flask import FlaskInstrumentor
+              from opentelemetry.instrumentation.requests import RequestsInstrumentor
+
+              resource = Resource.create({
+                "service.name": "demo-frontend",
+                "service.version": "2.0.0",
+                "deployment.environment": "learning"
+              })
+              provider = TracerProvider(resource=resource)
+              exporter = OTLPSpanExporter(
+                endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
+                insecure=True
+              )
+              provider.add_span_processor(BatchSpanProcessor(exporter))
+              trace.set_tracer_provider(provider)
+              tracer = trace.get_tracer("demo-frontend")
+              # Auto-instrumentar Flask y requests (propaga trace context en HTTP)
+              FlaskInstrumentor().instrument_app(Flask(__name__))
+              RequestsInstrumentor().instrument()
+
+              app = Flask(__name__)
+              FlaskInstrumentor().instrument_app(app)
+              BACKEND = os.getenv("BACKEND_URL", "http://demo-backend-svc.monitoring.svc.cluster.local:8080")
+
+              @app.route("/")
+              def index():
+                with tracer.start_as_current_span("frontend.handle_request") as span:
+                  span.set_attribute("http.route", "/")
+                  user_id = random.randint(1, 100)
+                  span.set_attribute("user.id", str(user_id))
+                  # Llamada al backend (con propagación automática del trace context)
+                  try:
+                    r = req.get(f"{BACKEND}/api/users/{user_id}", timeout=3)
+                    span.set_attribute("backend.status", r.status_code)
+                    # También pedir productos
+                    r2 = req.get(f"{BACKEND}/api/products", timeout=3)
+                    return jsonify({
+                      "user": r.json() if r.ok else {"error": "not found"},
+                      "products": r2.json() if r2.ok else {"error": "failed"},
+                      "trace_demo": True
+                    })
+                  except Exception as e:
+                    span.record_exception(e)
+                    return jsonify({"error": str(e)}), 500
+
+              @app.route("/health")
+              def health():
+                return jsonify({"status": "ok", "service": "demo-frontend"})
+
+              if __name__ == "__main__":
+                app.run(host="0.0.0.0", port=8080)
+              PYEOF
+              python /app.py
+          ports:
+            - containerPort: 8080
+          env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.monitoring.svc.cluster.local:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "demo-frontend"
+            - name: BACKEND_URL
+              value: "http://demo-backend-svc.monitoring.svc.cluster.local:8080"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-frontend-svc
+  namespace: monitoring
+  labels:
+    app: demo-frontend
+spec:
+  type: ClusterIP
+  selector:
+    app: demo-frontend
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# Generador de tráfico: CronJob que llama al frontend cada minuto
+# Genera trazas continuas sin necesidad de interacción manual
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: trace-load-generator
+  namespace: monitoring
+  labels:
+    app: trace-generator
+spec:
+  schedule: "*/1 * * * *"        # Cada minuto
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: trace-generator
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: load-gen
+              image: curlimages/curl:8.4.0
+              command:
+                - sh
+                - -c
+                - |
+                  FRONTEND="http://demo-frontend-svc.monitoring.svc.cluster.local:8080"
+                  echo "=== Generando tráfico de prueba para crear trazas ==="
+                  for i in $(seq 1 15); do
+                    STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$FRONTEND/" 2>/dev/null)
+                    echo "Request $i → HTTP $STATUS"
+                    sleep 2
+                  done
+                  echo "=== Generación de trazas completada ==="
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 16Mi
+                limits:
+                  cpu: 50m
+                  memory: 32Mi

@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tempo
+  namespace: monitoring
+  labels:
+    app: tempo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tempo
+  template:
+    metadata:
+      labels:
+        app: tempo
+      annotations:
+        # Prometheus scrape para métricas internas de Tempo
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "3200"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+
+      initContainers:
+        # Crea la estructura de directorios con los permisos correctos en NFS
+        - name: init-tempo-dirs
+          image: busybox:1.35
+          command:
+            - sh
+            - -c
+            - |
+              mkdir -p /var/tempo/traces \
+                       /var/tempo/wal \
+                       /var/tempo/generator/wal \
+                       /var/tempo/compactor
+              chmod -R 775 /var/tempo
+              echo "Directorios de Tempo creados correctamente"
+          volumeMounts:
+            - name: tempo-storage
+              mountPath: /var/tempo
+          securityContext:
+            runAsUser: 0
+
+      containers:
+        - name: tempo
+          image: grafana/tempo:2.3.1
+          args:
+            - -config.file=/etc/tempo/tempo.yaml
+            - -target=all                      # Modo monolítico: corre todos los componentes
+          ports:
+            - name: http
+              containerPort: 3200              # API HTTP y metrics
+            - name: otlp-grpc
+              containerPort: 4317              # OTLP gRPC
+            - name: otlp-http
+              containerPort: 4318              # OTLP HTTP
+            - name: jaeger-grpc
+              containerPort: 14250             # Jaeger gRPC
+            - name: jaeger-http
+              containerPort: 14268             # Jaeger Thrift HTTP
+            - name: zipkin
+              containerPort: 9411              # Zipkin
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: tempo-config
+              mountPath: /etc/tempo
+            - name: tempo-storage
+              mountPath: /var/tempo
+
+      volumes:
+        - name: tempo-config
+          configMap:
+            name: tempo-config
+        - name: tempo-storage
+          persistentVolumeClaim:
+            claimName: tempo-pvc

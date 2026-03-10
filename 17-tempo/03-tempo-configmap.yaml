@@ -1,0 +1,126 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tempo-config
+  namespace: monitoring
+  labels:
+    app: tempo
+data:
+  tempo.yaml: |
+    # ──────────────────────────────────────────────
+    # Tempo en modo monolítico (single binary)
+    # Ideal para desarrollo/aprendizaje
+    # ──────────────────────────────────────────────
+
+    server:
+      http_listen_port: 3200
+      log_level: info
+
+    # ──────────────────────────────────────────────
+    # Distributor: recibe trazas de las apps/OTel Collector
+    # Soporta múltiples protocolos
+    # ──────────────────────────────────────────────
+    distributor:
+      receivers:
+        # OTLP (protocolo nativo de OpenTelemetry)
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
+        # Jaeger (apps legacy Java/Go)
+        jaeger:
+          protocols:
+            thrift_http:
+              endpoint: 0.0.0.0:14268
+            grpc:
+              endpoint: 0.0.0.0:14250
+        # Zipkin (apps legacy Spring Boot)
+        zipkin:
+          endpoint: 0.0.0.0:9411
+
+    # ──────────────────────────────────────────────
+    # Ingester: buffer en memoria antes de escribir a disco
+    # ──────────────────────────────────────────────
+    ingester:
+      max_block_duration: 5m          # Flush a disco cada 5 minutos
+      trace_idle_period: 10s          # Traza "cerrada" si no recibe spans en 10s
+      max_block_bytes: 1_000_000      # ~1MB por bloque en memoria
+
+    # ──────────────────────────────────────────────
+    # Compactor: optimiza el almacenamiento en disco
+    # ──────────────────────────────────────────────
+    compactor:
+      compaction:
+        block_retention: 48h          # Retener trazas 48 horas
+        compacted_block_retention: 1h
+        compaction_window: 1h
+
+    # ──────────────────────────────────────────────
+    # Metrics Generator: genera métricas a partir de trazas
+    # Las envía a Prometheus para correlación Traces → Metrics
+    # ──────────────────────────────────────────────
+    metrics_generator:
+      registry:
+        external_labels:
+          source: tempo
+          cluster: kubernetes-devops
+      storage:
+        path: /var/tempo/generator/wal
+        # Enviar métricas al Prometheus del módulo 10
+        remote_write:
+          - url: http://prometheus.monitoring.svc.cluster.local:9090/api/v1/write
+            send_exemplars: true
+            send_native_histograms: true
+
+    # ──────────────────────────────────────────────
+    # Storage: dónde guardar las trazas
+    # Local filesystem (NFS) → cambiar a S3 en producción/EKS
+    # ──────────────────────────────────────────────
+    storage:
+      trace:
+        backend: local
+        local:
+          path: /var/tempo/traces
+        wal:
+          path: /var/tempo/wal
+
+    # ──────────────────────────────────────────────
+    # Overrides: configuraciones por tenant
+    # (auth_enabled=false → un solo tenant "anonymous")
+    # ──────────────────────────────────────────────
+    overrides:
+      defaults:
+        metrics_generator:
+          # Procesar ambos tipos de métricas desde trazas
+          processors:
+            - service-graphs    # RED metrics entre servicios
+            - span-metrics      # Histograma de latencias por span
+        ingestion:
+          rate_limit_bytes: 15_000_000   # 15MB/s por tenant
+          burst_size_bytes: 20_000_000
+          max_traces_per_user: 100000
+
+    # ──────────────────────────────────────────────
+    # Querier: configuración de búsquedas
+    # ──────────────────────────────────────────────
+    querier:
+      max_concurrent_queries: 20
+      search:
+        prefer_self: 10
+        external_hedge_requests_at: 8s
+        external_hedge_requests_up_to: 2
+
+    # Query frontend
+    query_frontend:
+      max_retries: 2
+      search:
+        duration_slo: 5s
+        throughput_bytes_slo: 1.073741824e+09
+      trace_by_id:
+        duration_slo: 5s
+
+    # Analytics deshabilitado
+    usage_report:
+      reporting_enabled: false

@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-tempo-datasource
+  namespace: monitoring
+  labels:
+    app: grafana
+    # Grafana carga automáticamente todos los ConfigMaps con este label
+    grafana_datasource: "1"
+data:
+  tempo-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Tempo
+        type: tempo
+        access: proxy
+        url: http://tempo.monitoring.svc.cluster.local:3200
+        version: 1
+        editable: true
+        isDefault: false
+        jsonData:
+          httpMethod: GET
+          tracesToLogsV2:
+            # Correlación Trazas → Logs: al hacer clic en una traza,
+            # Grafana busca automáticamente los logs de ese servicio
+            # en el rango de tiempo del span seleccionado
+            datasourceUid: loki
+            spanStartTimeShift: "-1m"
+            spanEndTimeShift: "1m"
+            tags:
+              - key: service.name
+                value: app
+              - key: k8s.pod.name
+                value: pod
+            filterByTraceID: true
+            filterBySpanID: false
+          tracesToMetrics:
+            # Correlación Trazas → Métricas: ver las métricas del servicio
+            # en el período de tiempo de la traza seleccionada
+            datasourceUid: prometheus
+            spanStartTimeShift: "-2m"
+            spanEndTimeShift: "2m"
+            tags:
+              - key: service.name
+                value: job
+            queries:
+              - name: "Request Rate"
+                query: "sum(rate(traces_spanmetrics_calls_total{$$__tags}[5m]))"
+              - name: "Error Rate"
+                query: "sum(rate(traces_spanmetrics_calls_total{$$__tags,status_code=\"STATUS_CODE_ERROR\"}[5m]))"
+              - name: "Latency P99"
+                query: "histogram_quantile(0.99, sum(rate(traces_spanmetrics_duration_milliseconds_bucket{$$__tags}[5m])) by (le))"
+          serviceMap:
+            # Mapa de servicios: visualización de grafos de dependencias
+            datasourceUid: prometheus
+          nodeGraph:
+            enabled: true
+          search:
+            hide: false
+          lokiSearch:
+            datasourceUid: loki

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tempo-pvc
+  namespace: monitoring
+  labels:
+    app: tempo
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: nfs-manual
+  resources:
+    requests:
+      storage: 5Gi

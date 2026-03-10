@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: tempo-pv
+  labels:
+    app: tempo
+    type: nfs
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-manual
+  nfs:
+    server: 192.168.109.210
+    path: /srv/nfs/k8s/tempo

@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: monitoring
+  labels:
+    app: otel-collector
+spec:
+  type: ClusterIP
+  selector:
+    app: otel-collector
+  ports:
+    # Las apps dentro del cluster envían trazas aquí
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+      protocol: TCP
+    # Compatibilidad Jaeger
+    - name: jaeger-grpc
+      port: 14250
+      targetPort: jaeger-grpc
+      protocol: TCP
+    - name: jaeger-http
+      port: 14268
+      targetPort: jaeger-http
+      protocol: TCP
+    # Compatibilidad Zipkin
+    - name: zipkin
+      port: 9411
+      targetPort: zipkin
+      protocol: TCP
+    # Métricas del Collector para Prometheus
+    - name: prom-metrics
+      port: 8889
+      targetPort: prom-metrics
+      protocol: TCP
+    # zPages: diagnóstico en tiempo real
+    # kubectl port-forward svc/otel-collector 55679 -n monitoring
+    # → http://localhost:55679/debug/tracez
+    - name: zpages
+      port: 55679
+      targetPort: zpages
+      protocol: TCP

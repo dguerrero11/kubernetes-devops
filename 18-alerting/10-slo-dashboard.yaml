@@ -1,0 +1,222 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-slo
+  namespace: monitoring
+  labels:
+    app: grafana
+    grafana_dashboard: "1"
+data:
+  slo-dashboard.json: |
+    {
+      "id": null,
+      "uid": "slo-error-budget",
+      "title": "SLO — Error Budget Dashboard",
+      "description": "Service Level Objectives: disponibilidad y error budget para demo-chaos",
+      "tags": ["slo", "alerting", "observabilidad"],
+      "timezone": "browser",
+      "refresh": "30s",
+      "time": {"from": "now-1h", "to": "now"},
+      "panels": [
+        {
+          "id": 1,
+          "title": "Disponibilidad Actual (SLI)",
+          "type": "stat",
+          "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "orientation": "horizontal",
+            "textMode": "auto",
+            "colorMode": "background",
+            "graphMode": "none"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "orange", "value": 0.99},
+                  {"color": "green", "value": 0.995}
+                ]
+              },
+              "mappings": [],
+              "min": 0, "max": 1
+            }
+          },
+          "targets": [{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "1 - (sum(rate(http_requests_total{status_code=~\"5..\",job=\"demo-chaos\"}[5m])) / sum(rate(http_requests_total{job=\"demo-chaos\"}[5m]) > 0))",
+            "legendFormat": "Disponibilidad"
+          }]
+        },
+        {
+          "id": 2,
+          "title": "SLO Objetivo",
+          "type": "stat",
+          "gridPos": {"x": 6, "y": 0, "w": 4, "h": 4},
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "colorMode": "background",
+            "graphMode": "none"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "color": {"mode": "fixed", "fixedColor": "blue"},
+              "min": 0, "max": 1
+            }
+          },
+          "targets": [{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "vector(0.995)",
+            "legendFormat": "SLO (99.5%)"
+          }]
+        },
+        {
+          "id": 3,
+          "title": "Burn Rate Actual",
+          "type": "stat",
+          "gridPos": {"x": 10, "y": 0, "w": 5, "h": 4},
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "colorMode": "background",
+            "graphMode": "none"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "decimals": 2,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "orange", "value": 6},
+                  {"color": "red", "value": 14.4}
+                ]
+              }
+            }
+          },
+          "targets": [{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "(sum(rate(http_requests_total{status_code=~\"5..\",job=\"demo-chaos\"}[5m])) / sum(rate(http_requests_total{job=\"demo-chaos\"}[5m]) > 0)) / 0.005",
+            "legendFormat": "Burn Rate"
+          }]
+        },
+        {
+          "id": 4,
+          "title": "Modo Caos",
+          "type": "stat",
+          "gridPos": {"x": 15, "y": 0, "w": 4, "h": 4},
+          "options": {
+            "reduceOptions": {"calcs": ["lastNotNull"]},
+            "colorMode": "background",
+            "graphMode": "none",
+            "textMode": "auto"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "mappings": [
+                {"type": "value", "options": {"0": {"text": "Normal ✅", "color": "green"}, "1": {"text": "CAOS 🔥", "color": "red"}}}
+              ]
+            }
+          },
+          "targets": [{
+            "datasource": {"type": "prometheus", "uid": "prometheus"},
+            "expr": "demo_chaos_mode{job=\"demo-chaos\"}",
+            "legendFormat": "Estado"
+          }]
+        },
+        {
+          "id": 5,
+          "title": "Tasa de Éxito vs Error (últimas 2h)",
+          "type": "timeseries",
+          "gridPos": {"x": 0, "y": 4, "w": 19, "h": 8},
+          "fieldConfig": {
+            "defaults": {"unit": "reqps"},
+            "overrides": [
+              {"matcher": {"id": "byName", "options": "Errores (5xx)"}, "properties": [{"id": "color", "value": {"fixedColor": "red", "mode": "fixed"}}]},
+              {"matcher": {"id": "byName", "options": "Éxitos (2xx)"}, "properties": [{"id": "color", "value": {"fixedColor": "green", "mode": "fixed"}}]}
+            ]
+          },
+          "options": {
+            "tooltip": {"mode": "multi"},
+            "legend": {"displayMode": "list", "placement": "bottom"}
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "expr": "sum(rate(http_requests_total{status_code=~\"2..\",job=\"demo-chaos\"}[1m]))",
+              "legendFormat": "Éxitos (2xx)"
+            },
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "expr": "sum(rate(http_requests_total{status_code=~\"5..\",job=\"demo-chaos\"}[1m]))",
+              "legendFormat": "Errores (5xx)"
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "Burn Rate (ventana 5m vs 1h)",
+          "type": "timeseries",
+          "gridPos": {"x": 0, "y": 12, "w": 12, "h": 7},
+          "fieldConfig": {
+            "defaults": {"unit": "short"},
+            "overrides": []
+          },
+          "options": {"tooltip": {"mode": "multi"}},
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "expr": "(sum(rate(http_requests_total{status_code=~\"5..\",job=\"demo-chaos\"}[5m])) / sum(rate(http_requests_total{job=\"demo-chaos\"}[5m]) > 0)) / 0.005",
+              "legendFormat": "Burn Rate 5m"
+            },
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "expr": "(sum(rate(http_requests_total{status_code=~\"5..\",job=\"demo-chaos\"}[1h])) / sum(rate(http_requests_total{job=\"demo-chaos\"}[1h]) > 0)) / 0.005",
+              "legendFormat": "Burn Rate 1h"
+            },
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "expr": "vector(14.4)",
+              "legendFormat": "Umbral Crítico (página)"
+            },
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "expr": "vector(6)",
+              "legendFormat": "Umbral Warning (ticket)"
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "title": "Disponibilidad en el tiempo",
+          "type": "timeseries",
+          "gridPos": {"x": 12, "y": 12, "w": 7, "h": 7},
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0.95, "max": 1,
+              "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 0.99}, {"color": "green", "value": 0.995}]}
+            }
+          },
+          "targets": [
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "expr": "1 - (sum(rate(http_requests_total{status_code=~\"5..\",job=\"demo-chaos\"}[5m])) / sum(rate(http_requests_total{job=\"demo-chaos\"}[5m]) > 0))",
+              "legendFormat": "Disponibilidad"
+            },
+            {
+              "datasource": {"type": "prometheus", "uid": "prometheus"},
+              "expr": "vector(0.995)",
+              "legendFormat": "SLO 99.5%"
+            }
+          ]
+        }
+      ],
+      "schemaVersion": 38,
+      "version": 1
+    }

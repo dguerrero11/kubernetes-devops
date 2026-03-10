@@ -1,0 +1,240 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Demo Chaos App — para demostrar el pipeline de alertas
+#
+# La app expone métricas Prometheus en /metrics y un endpoint HTTP en /
+# El modo caos se activa/desactiva cambiando el ConfigMap chaos-config
+# La app lo detecta automáticamente (el ConfigMap está montado como volumen)
+#
+# Comandos de demo:
+#   Activar caos:   kubectl patch configmap chaos-config -n monitoring --type merge -p '{"data":{"CHAOS_MODE":"true","ERROR_RATE":"0.8"}}'
+#   Desactivar:     kubectl patch configmap chaos-config -n monitoring --type merge -p '{"data":{"CHAOS_MODE":"false","ERROR_RATE":"0"}}'
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chaos-config
+  namespace: monitoring
+  labels:
+    app: demo-chaos
+data:
+  CHAOS_MODE: "false"
+  ERROR_RATE: "0"
+  LATENCY_MS: "50"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-chaos-app
+  namespace: monitoring
+  labels:
+    app: demo-chaos
+data:
+  app.py: |
+    #!/usr/bin/env python3
+    """
+    Demo Chaos App - genera métricas Prometheus y simula fallos
+    controlados para demostrar el sistema de alertas.
+    """
+    import os
+    import time
+    import random
+    import threading
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    # ── Contadores de métricas ───────────────────────────────────────
+    requests_total   = {}  # {status_code: count}
+    request_durations = []  # lista de duraciones (para histograma simplificado)
+    chaos_active     = False
+    start_time       = time.time()
+
+    def read_chaos_config():
+        """Lee la configuración de caos del ConfigMap montado como volumen."""
+        global chaos_active
+        config_dir = "/etc/chaos"
+        try:
+            chaos_mode  = open(f"{config_dir}/CHAOS_MODE").read().strip()
+            error_rate  = float(open(f"{config_dir}/ERROR_RATE").read().strip() or "0")
+            chaos_active = (chaos_mode.lower() == "true")
+            return chaos_active, error_rate
+        except Exception:
+            return False, 0.0
+
+    def background_traffic():
+        """Genera tráfico interno para crear métricas continuas."""
+        global requests_total, request_durations
+        while True:
+            chaos, err_rate = read_chaos_config()
+            start = time.time()
+            if chaos and random.random() < err_rate:
+                status = 500
+            elif random.random() < 0.05:
+                status = 404
+            else:
+                status = 200
+            duration = random.uniform(0.01, 0.3) + (random.uniform(0.5, 2.0) if chaos else 0)
+            time.sleep(duration)
+            requests_total[status] = requests_total.get(status, 0) + 1
+            request_durations.append(duration)
+            if len(request_durations) > 1000:
+                request_durations = request_durations[-500:]
+            time.sleep(random.uniform(0.1, 0.5))
+
+    def generate_metrics():
+        chaos, err_rate = read_chaos_config()
+        total    = sum(requests_total.values())
+        p50 = p95 = p99 = 0
+        if request_durations:
+            sorted_d = sorted(request_durations)
+            n = len(sorted_d)
+            p50 = sorted_d[int(n*0.50)]
+            p95 = sorted_d[int(n*0.95)]
+            p99 = sorted_d[int(n*0.99)]
+        lines = [
+            "# HELP http_requests_total Total HTTP requests",
+            "# TYPE http_requests_total counter",
+        ]
+        for status, count in requests_total.items():
+            lines.append(f'http_requests_total{{job="demo-chaos",status_code="{status}"}} {count}')
+        lines += [
+            "# HELP http_request_duration_seconds HTTP request duration",
+            "# TYPE http_request_duration_seconds histogram",
+            f'http_request_duration_seconds_bucket{{job="demo-chaos",le="0.1"}} {sum(1 for d in request_durations if d < 0.1)}',
+            f'http_request_duration_seconds_bucket{{job="demo-chaos",le="0.5"}} {sum(1 for d in request_durations if d < 0.5)}',
+            f'http_request_duration_seconds_bucket{{job="demo-chaos",le="1.0"}} {sum(1 for d in request_durations if d < 1.0)}',
+            f'http_request_duration_seconds_bucket{{job="demo-chaos",le="2.0"}} {sum(1 for d in request_durations if d < 2.0)}',
+            f'http_request_duration_seconds_bucket{{job="demo-chaos",le="+Inf"}} {len(request_durations)}',
+            f'http_request_duration_seconds_sum{{job="demo-chaos"}} {sum(request_durations):.3f}',
+            f'http_request_duration_seconds_count{{job="demo-chaos"}} {len(request_durations)}',
+            "# HELP demo_chaos_mode Whether chaos mode is active (1=active, 0=inactive)",
+            "# TYPE demo_chaos_mode gauge",
+            f'demo_chaos_mode{{job="demo-chaos"}} {1 if chaos else 0}',
+            "# HELP demo_uptime_seconds Uptime of the demo app",
+            "# TYPE demo_uptime_seconds gauge",
+            f'demo_uptime_seconds{{job="demo-chaos"}} {time.time() - start_time:.0f}',
+        ]
+        return "\n".join(lines) + "\n"
+
+    class AppHandler(BaseHTTPRequestHandler):
+        def log_message(self, format, *args):
+            pass
+
+        def do_GET(self):
+            chaos, err_rate = read_chaos_config()
+
+            if self.path == "/metrics":
+                body = generate_metrics().encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; version=0.0.4")
+                self.end_headers()
+                self.wfile.write(body)
+
+            elif self.path == "/health":
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"status":"ok"}')
+
+            elif self.path == "/status":
+                total = sum(requests_total.values())
+                err   = sum(v for k, v in requests_total.items() if k >= 500)
+                body  = (
+                    f'{{"chaos_mode":{str(chaos).lower()},"error_rate":{err_rate},'
+                    f'"total_requests":{total},'
+                    f'"error_requests":{err},'
+                    f'"current_error_pct":{(err/total*100) if total else 0:.1f}}}'
+                ).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+
+            else:
+                # Endpoint principal: simula una petición de usuario
+                if chaos and random.random() < err_rate:
+                    self.send_response(500)
+                    self.end_headers()
+                    msg = "ERROR: servicio temporalmente no disponible"
+                    self.wfile.write(msg.encode())
+                    requests_total[500] = requests_total.get(500, 0) + 1
+                else:
+                    self.send_response(200)
+                    self.end_headers()
+                    mode = "🔥 MODO CAOS ACTIVO" if chaos else "✅ Normal"
+                    self.wfile.write(f"OK | {mode}".encode())
+                    requests_total[200] = requests_total.get(200, 0) + 1
+
+    # Arrancar el generador de tráfico en background
+    threading.Thread(target=background_traffic, daemon=True).start()
+
+    print("Demo Chaos App iniciando en :8080")
+    print("Endpoints: / (tráfico) | /metrics (Prometheus) | /status | /health")
+    HTTPServer(("0.0.0.0", 8080), AppHandler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-chaos
+  namespace: monitoring
+  labels:
+    app: demo-chaos
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: demo-chaos
+  template:
+    metadata:
+      labels:
+        app: demo-chaos
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: chaos-app
+          image: python:3.11-slim
+          command: ["python3", "/app/app.py"]
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 30m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: app-code
+              mountPath: /app
+            # El ConfigMap chaos-config se monta como directorio
+            # La app lee los archivos directamente para detectar cambios
+            - name: chaos-config
+              mountPath: /etc/chaos
+      volumes:
+        - name: app-code
+          configMap:
+            name: demo-chaos-app
+        - name: chaos-config
+          configMap:
+            name: chaos-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-chaos-svc
+  namespace: monitoring
+  labels:
+    app: demo-chaos
+spec:
+  type: ClusterIP
+  selector:
+    app: demo-chaos
+  ports:
+    - port: 8080
+      targetPort: 8080

@@ -13,6 +13,7 @@ data:
     datasources:
       - name: Tempo
         type: tempo
+        uid: tempo
         access: proxy
         url: http://tempo.monitoring.svc.cluster.local:3200
         version: 1

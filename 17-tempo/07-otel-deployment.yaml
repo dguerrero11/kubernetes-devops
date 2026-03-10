@@ -92,7 +92,7 @@ spec:
               containerPort: 9411       # Zipkin
             - name: prom-metrics
               containerPort: 8889       # Métricas Prometheus del Collector
-            - name: internal-metrics
+            - name: int-metrics
               containerPort: 8888       # Métricas internas
             - name: health
               containerPort: 13133      # Health check

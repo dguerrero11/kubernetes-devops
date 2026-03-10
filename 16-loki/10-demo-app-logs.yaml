@@ -1,0 +1,90 @@
+# App de demostración que genera logs variados para practicar LogQL
+# Incluye: logs de acceso HTTP, errores, warnings y logs estructurados JSON
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-logger
+  namespace: monitoring
+  labels:
+    app: demo-logger
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: demo-logger
+  template:
+    metadata:
+      labels:
+        app: demo-logger
+        tier: demo
+    spec:
+      containers:
+        # Contenedor 1: nginx con logs de acceso HTTP
+        - name: nginx
+          image: nginx:1.25
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
+
+        # Contenedor 2: generador de logs variados (errores, warnings, info)
+        - name: log-generator
+          image: busybox:1.35
+          command:
+            - sh
+            - -c
+            - |
+              LEVELS="INFO INFO INFO INFO WARN ERROR DEBUG"
+              MESSAGES=(
+                "User login successful user=admin"
+                "Database query executed duration=45ms rows=100"
+                "Cache miss for key=session_data"
+                "Request processed path=/api/users status=200"
+                "Slow query detected duration=2500ms query=SELECT"
+                "Connection pool exhausted retrying=true"
+                "Authentication failed user=attacker ip=10.0.0.1"
+                "Memory usage high percent=85"
+                "Backup completed size=1.2GB duration=120s"
+                "Config reloaded changes=3"
+              )
+              i=0
+              while true; do
+                LEVEL=$(echo $LEVELS | tr ' ' '\n' | shuf | head -1)
+                MSG=${MESSAGES[$((RANDOM % ${#MESSAGES[@]}))]}
+                TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+                echo "{\"timestamp\":\"$TIMESTAMP\",\"level\":\"$LEVEL\",\"message\":\"$MSG\",\"pod\":\"$(hostname)\"}"
+                i=$((i + 1))
+                # Cada 10 logs, simular un error crítico
+                if [ $((i % 10)) -eq 0 ]; then
+                  echo "{\"timestamp\":\"$TIMESTAMP\",\"level\":\"ERROR\",\"message\":\"Critical: service unavailable retries=3\",\"pod\":\"$(hostname)\"}"
+                fi
+                sleep $((RANDOM % 3 + 1))
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 8Mi
+            limits:
+              cpu: 50m
+              memory: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-logger-svc
+  namespace: monitoring
+  labels:
+    app: demo-logger
+spec:
+  type: ClusterIP
+  selector:
+    app: demo-logger
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80

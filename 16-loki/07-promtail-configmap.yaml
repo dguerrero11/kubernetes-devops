@@ -1,0 +1,122 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: promtail-config
+  namespace: monitoring
+  labels:
+    app: promtail
+data:
+  promtail.yaml: |
+    # Servidor HTTP de Promtail (métricas y health)
+    server:
+      http_listen_port: 9080
+      grpc_listen_port: 0
+      log_level: info
+
+    # Ruta para guardar posición de lectura de cada archivo
+    # Permite continuar donde quedó si se reinicia el pod
+    positions:
+      filename: /run/promtail/positions.yaml
+
+    # Destino: Loki
+    clients:
+      - url: http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push
+
+    scrape_configs:
+
+      # ──────────────────────────────────────────────────────────────
+      # 1. Logs de pods de Kubernetes
+      #    Lee /var/log/pods/<namespace>_<pod>_<uid>/<container>/*.log
+      # ──────────────────────────────────────────────────────────────
+      - job_name: kubernetes-pods
+        pipeline_stages:
+          # Parsear logs en formato Docker JSON
+          - docker: {}
+          # Extraer labels del log si está en formato logfmt
+          - match:
+              selector: '{app="demo-logger"}'
+              stages:
+                - regex:
+                    expression: '(?P<method>\w+) (?P<path>/\S*) HTTP/[\d.]+ (?P<status>\d+)'
+                - labels:
+                    method:
+                    status:
+
+        kubernetes_sd_configs:
+          - role: pod
+
+        relabel_configs:
+          # Solo incluir pods con annotation: promtail.io/scrape=true
+          # O todos los pods (comentar la siguiente línea para scrape universal)
+          # - source_labels: [__meta_kubernetes_pod_annotation_promtail_io_scrape]
+          #   action: keep
+          #   regex: true
+
+          # Label: namespace
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+
+          # Label: pod
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+
+          # Label: container
+          - source_labels: [__meta_kubernetes_pod_container_name]
+            target_label: container
+
+          # Label: app (del label app= del pod)
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            target_label: app
+
+          # Label: node
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: node
+
+          # Construir la ruta al archivo de log
+          - source_labels:
+              - __meta_kubernetes_pod_uid
+              - __meta_kubernetes_pod_container_name
+            target_label: __path__
+            replacement: /var/log/pods/*$1*/*$2*/*.log
+            separator: /
+
+          # Alternativa más robusta para encontrar el archivo de log
+          - source_labels:
+              - __meta_kubernetes_pod_uid
+              - __meta_kubernetes_pod_container_name
+            target_label: __path__
+            regex: (.+)/(.+)
+            replacement: /var/log/pods/*$1*/$2/*.log
+
+      # ──────────────────────────────────────────────────────────────
+      # 2. Logs del journal del sistema (systemd/kubelet/containerd)
+      # ──────────────────────────────────────────────────────────────
+      - job_name: systemd-journal
+        journal:
+          max_age: 12h
+          path: /var/log/journal
+          labels:
+            job: systemd-journal
+        relabel_configs:
+          # Label: unidad systemd (kubelet, containerd, etc.)
+          - source_labels: ['__journal__systemd_unit']
+            target_label: unit
+          # Label: nodo
+          - source_labels: ['__journal__hostname']
+            target_label: node
+
+      # ──────────────────────────────────────────────────────────────
+      # 3. Logs de contenedores (fallback para /var/log/containers)
+      # ──────────────────────────────────────────────────────────────
+      - job_name: kubernetes-containers
+        static_configs:
+          - targets:
+              - localhost
+            labels:
+              job: containers
+              __path__: /var/log/containers/*.log
+        pipeline_stages:
+          - docker: {}
+        relabel_configs:
+          - source_labels: [__path__]
+            target_label: filename

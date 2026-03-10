@@ -73,6 +73,7 @@ spec:
             - "--storage.tsdb.path=/prometheus"                  # Dónde guardar datos
             - "--storage.tsdb.retention.time=15d"                # Retener 15 días de métricas
             - "--web.enable-lifecycle"                           # Permite reload sin reiniciar
+            - "--web.enable-remote-write-receiver"               # Permite recibir métricas via remote_write (Tempo)
             - "--web.console.libraries=/usr/share/prometheus/console_libraries"
             - "--web.console.templates=/usr/share/prometheus/consoles"
           ports:

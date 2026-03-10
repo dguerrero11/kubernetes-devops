@@ -119,7 +119,7 @@ data:
       # Receptor principal: webhook al servidor de demo
       - name: webhook-demo
         webhook_configs:
-          - url: 'http://webhook-receiver.monitoring.svc.cluster.local:5001/alerts'
+          - url: 'http://webhook-receiver-svc.monitoring.svc.cluster.local:5001/alerts'
             send_resolved: true   # Notificar también cuando se resuelve
             max_alerts: 10        # Máximo de alertas por payload
             http_config:

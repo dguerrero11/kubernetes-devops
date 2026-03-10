@@ -29,8 +29,9 @@ spec:
             - sh
             - -c
             - |
-              mkdir -p /loki/chunks /loki/rules /loki/compactor
-              chmod -R 775 /loki
+              mkdir -p /loki/chunks /loki/rules /loki/compactor /loki/boltdb-shipper-cache /loki/boltdb-shipper-active
+              chown -R 10001:10001 /loki
+              chmod -R 777 /loki
           volumeMounts:
             - name: loki-storage
               mountPath: /loki

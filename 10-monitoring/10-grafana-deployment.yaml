@@ -60,8 +60,12 @@ spec:
             claimName: pvc-grafana        # Datos persistentes en NFS
 
         - name: grafana-datasource
-          configMap:
-            name: grafana-datasource      # Datasource de Prometheus (auto-provisioning)
+          projected:
+            sources:
+              - configMap:
+                  name: grafana-datasource        # Datasource de Prometheus
+              - configMap:
+                  name: grafana-loki-datasource   # Datasource de Loki
 
         - name: grafana-dashboard-provider
           configMap:

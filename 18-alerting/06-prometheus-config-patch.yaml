@@ -30,8 +30,9 @@ data:
     # Los ConfigMaps de reglas se montan en /etc/prometheus/rules/
     # ──────────────────────────────────────────────────────────────
     rule_files:
-      - /etc/prometheus/rules/*/*.yml
-      - /etc/prometheus/rules/*/*.yaml
+      - /etc/prometheus/rules/infra/infra.yml
+      - /etc/prometheus/rules/app/app.yml
+      - /etc/prometheus/rules/slo/slo.yml
 
     # ──────────────────────────────────────────────────────────────
     # SCRAPE CONFIGS: qué targets monitorear

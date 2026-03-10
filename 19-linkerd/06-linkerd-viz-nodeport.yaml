@@ -1,0 +1,30 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Exponer el Dashboard de Linkerd Viz via NodePort
+#
+# Por defecto, el web dashboard de Linkerd Viz solo es accesible via
+# port-forward (linkerd viz dashboard &).
+#
+# Este Service adicional lo expone en NodePort 30099 para que los alumnos
+# puedan acceder desde el navegador sin hacer port-forwarding.
+#
+# Acceso: http://192.168.109.200:30099
+#         http://192.168.109.201:30099
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: linkerd-viz-nodeport
+  namespace: linkerd-viz
+  labels:
+    app.kubernetes.io/part-of: linkerd-viz
+spec:
+  type: NodePort
+  # El selector apunta al deployment 'web' del dashboard de Linkerd Viz
+  selector:
+    component: web
+    linkerd.io/extension: viz
+  ports:
+  - name: http
+    port: 8084
+    targetPort: 8084
+    nodePort: 30099

@@ -1,0 +1,45 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# HTTPRoute: Traffic Splitting (Canary Deployment)
+#
+# Distribuye el tráfico del Service "backend-svc" entre dos backends:
+#   - backend-v1-svc: 90% (versión estable)
+#   - backend-v2-svc: 10% (versión canary)
+#
+# API utilizada: policy.linkerd.io/v1beta2 (nativa de Linkerd v2.14+)
+# No requiere Gateway API CRDs adicionales.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: policy.linkerd.io/v1beta2
+kind: HTTPRoute
+metadata:
+  name: backend-traffic-split
+  namespace: linkerd-demo
+spec:
+  # parentRefs apunta al Service padre (el que recibe el tráfico del frontend)
+  parentRefs:
+  - name: backend-svc
+    kind: Service
+    group: ""        # "" = core API group de Kubernetes
+    port: 8080
+  rules:
+  - backendRefs:
+    # Versión estable: recibe la mayoría del tráfico
+    - name: backend-v1-svc
+      port: 8080
+      weight: 90
+    # Versión canary: recibe una porción pequeña para validar
+    - name: backend-v2-svc
+      port: 8080
+      weight: 10
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PROCESO DE PROMOCIÓN PROGRESIVA (canary release):
+#
+# Fase 1 — Validación inicial:   v1=90, v2=10   (aplica este archivo)
+# Fase 2 — Más tráfico canary:   v1=50, v2=50   (editar weights y re-aplicar)
+# Fase 3 — Casi completo:        v1=10, v2=90   (editar weights y re-aplicar)
+# Fase 4 — Migración completa:   v1=0,  v2=100  (o eliminar este HTTPRoute)
+#
+# Para volver atrás (rollback):
+#   kubectl delete httproute backend-traffic-split -n linkerd-demo
+#   (el tráfico vuelve a distribuirse normalmente entre todos los pods de backend)
+# ─────────────────────────────────────────────────────────────────────────────

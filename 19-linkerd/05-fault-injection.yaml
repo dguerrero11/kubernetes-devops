@@ -1,0 +1,119 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Fault Injection Demo: Backend que siempre retorna HTTP 500
+#
+# Uso en la clase:
+#   1. Aplicar este archivo (kubectl apply -f 05-fault-injection.yaml)
+#   2. Editar 03-traffic-split.yaml para enviar 30% al backend-failing-svc
+#   3. Observar success rate caer en el dashboard de Linkerd Viz
+#   4. Ver cómo los retries del ServiceProfile absorben algunos fallos
+#   5. Eliminar este deployment y restaurar el traffic split normal
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-failing-config
+  namespace: linkerd-demo
+data:
+  nginx.conf: |
+    server {
+      listen 8080;
+
+      # Simula un servicio con errores — retorna siempre HTTP 500
+      location / {
+        return 500 "Error 500: Backend con fallos (demo fault injection)\n";
+        add_header Content-Type text/plain;
+        add_header X-Error-Type "simulated-fault" always;
+      }
+
+      location /api/data {
+        # Retorna 503 Service Unavailable para la ruta principal
+        return 503 "{\"error\": \"service unavailable\", \"version\": \"failing\", \"simulated\": true}\n";
+        add_header Content-Type application/json;
+      }
+
+      # El health check responde OK para que el pod arranque
+      # (en producción real el health check también fallaría y K8s lo reemplazaría)
+      location /health {
+        return 200 "pod running but service failing\n";
+        add_header Content-Type text/plain;
+      }
+    }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-failing
+  namespace: linkerd-demo
+  labels:
+    app: backend-failing
+  annotations:
+    # Etiqueta de contexto para el dashboard
+    linkerd.io/inject: enabled
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend-failing
+  template:
+    metadata:
+      labels:
+        app: backend-failing
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.25
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: config
+          mountPath: /etc/nginx/conf.d
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "50m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
+      volumes:
+      - name: config
+        configMap:
+          name: backend-failing-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-failing-svc
+  namespace: linkerd-demo
+spec:
+  selector:
+    app: backend-failing
+  ports:
+  - port: 8080
+    targetPort: 8080
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DEMO: Para incluir el backend-failing en el traffic split,
+# editar temporalmente 03-traffic-split.yaml:
+#
+#   rules:
+#   - backendRefs:
+#     - name: backend-v1-svc       weight: 70
+#     - name: backend-v2-svc       weight: 20
+#     - name: backend-failing-svc  weight: 10   ← agrega esto
+#
+# Comandos para observar los fallos:
+#   watch -n 1 "linkerd viz stat deployment -n linkerd-demo"
+#   linkerd viz tap deployment/frontend -n linkerd-demo
+#
+# Limpiar:
+#   kubectl delete -f 05-fault-injection.yaml
+#   kubectl apply -f 03-traffic-split.yaml   # restaura el split original
+# ─────────────────────────────────────────────────────────────────────────────

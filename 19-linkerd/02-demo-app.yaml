@@ -294,7 +294,11 @@ metadata:
   name: backend-svc
   namespace: linkerd-demo
 spec:
-  # Sin selector: el HTTPRoute de Linkerd controla a dónde va el tráfico
+  # Selector apunta a TODOS los pods de backend (v1 y v2)
+  # El HTTPRoute en 03-traffic-split.yaml controla la distribución 90/10
+  # Linkerd intercepta la conexión antes de llegar a los endpoints
+  selector:
+    app: backend
   ports:
   - port: 8080
     targetPort: 8080

@@ -1,0 +1,114 @@
+---
+# Task: canary-validate-task
+# Valida que los manifests del módulo canary existen y tienen estructura correcta
+#
+# Checks realizados:
+#   1. Los 7 archivos YAML del directorio manifests/ existen
+#   2. Cada YAML tiene apiVersion y kind (no está vacío/corrupto)
+#   3. Muestra un resumen de lo que se va a desplegar
+#   4. Verifica que el canary deployment tiene replicas: 0 (estado inicial)
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: canary-validate-task
+  namespace: tekton-pipelines
+  labels:
+    app: canary-pipeline
+spec:
+  description: |
+    Valida los manifests YAML del directorio 20-canary-cicd/manifests/.
+    Verifica que todos los archivos existen y tienen estructura correcta.
+
+  workspaces:
+    - name: source
+      description: Workspace con el repo clonado
+
+  steps:
+    - name: check-files
+      image: alpine:3.19
+      script: |
+        #!/bin/sh
+        set -e
+        MANIFESTS_DIR="$(workspaces.source.path)/20-canary-cicd/manifests"
+
+        echo "========================================"
+        echo "  VALIDACION DE MANIFESTS CANARY CICD"
+        echo "========================================"
+        echo ""
+
+        # Verificar que el directorio existe
+        if [ ! -d "$MANIFESTS_DIR" ]; then
+          echo "ERROR: Directorio $MANIFESTS_DIR no encontrado"
+          echo "Verifica que el repo tiene el módulo 20-canary-cicd/"
+          exit 1
+        fi
+
+        echo "Directorio de manifests: $MANIFESTS_DIR"
+        echo ""
+
+        # Lista de archivos requeridos
+        REQUIRED_FILES="
+          01-namespace.yaml
+          02-configmaps.yaml
+          03-stable-deployment.yaml
+          04-canary-deployment.yaml
+          05-services.yaml
+          06-ingress.yaml
+          07-load-generator.yaml
+        "
+
+        PASS=0
+        FAIL=0
+
+        for FILE in $REQUIRED_FILES; do
+          FILEPATH="$MANIFESTS_DIR/$FILE"
+          if [ -f "$FILEPATH" ]; then
+            # Verificar que tiene apiVersion
+            if grep -q "apiVersion:" "$FILEPATH"; then
+              SIZE=$(wc -c < "$FILEPATH")
+              echo "  [OK] $FILE (${SIZE} bytes)"
+              PASS=$((PASS + 1))
+            else
+              echo "  [WARN] $FILE encontrado pero falta apiVersion"
+              FAIL=$((FAIL + 1))
+            fi
+          else
+            echo "  [FAIL] $FILE NO encontrado"
+            FAIL=$((FAIL + 1))
+          fi
+        done
+
+        echo ""
+        echo "Resultado: $PASS OK, $FAIL FALLOS"
+
+        if [ $FAIL -gt 0 ]; then
+          echo "ERROR: $FAIL archivos fallaron la validación"
+          exit 1
+        fi
+
+    - name: check-canary-state
+      image: alpine:3.19
+      script: |
+        #!/bin/sh
+        set -e
+        CANARY_FILE="$(workspaces.source.path)/20-canary-cicd/manifests/04-canary-deployment.yaml"
+
+        echo "========================================"
+        echo "  ESTADO ACTUAL DEL CANARY DEPLOYMENT"
+        echo "========================================"
+
+        # Leer las réplicas actuales
+        CURRENT_REPLICAS=$(grep "replicas:" "$CANARY_FILE" | head -1 | awk '{print $2}')
+        echo ""
+        echo "webapp-canary réplicas actuales: $CURRENT_REPLICAS"
+
+        if [ "$CURRENT_REPLICAS" = "0" ]; then
+          echo "Estado: INACTIVO (canary no desplegado aún)"
+          echo "El siguiente step activará el canary con 1 réplica"
+        else
+          echo "Estado: ACTIVO ($CURRENT_REPLICAS réplica/s corriendo)"
+        fi
+
+        echo ""
+        echo "Manifests listos para el despliegue canary."
+        echo "Próximo paso: update-canary (activar canary en Git)"

@@ -1,0 +1,12 @@
+---
+# Namespace para el ejercicio integral Canary + CI/CD
+# label linkerd.io/inject: enabled → todos los pods en este namespace
+# reciben el sidecar proxy de Linkerd automáticamente
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: canary-demo
+  labels:
+    linkerd.io/inject: enabled
+    environment: production
+    module: "20-canary-cicd"

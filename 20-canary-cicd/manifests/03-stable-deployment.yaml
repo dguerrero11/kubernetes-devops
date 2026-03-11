@@ -1,0 +1,78 @@
+---
+# Deployment: webapp-stable
+# Version 1.0 — Canal STABLE (azul)
+# Réplicas iniciales: 9 → recibe ~90% del tráfico (round-robin)
+#
+# Estrategia canary basada en réplicas:
+#   Fase inicial:  stable=9, canary=1  → 90/10
+#   Fase 2:        stable=5, canary=5  → 50/50
+#   Fase final:    stable=0, canary=10 → 100% v2
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp-stable
+  namespace: canary-demo
+  labels:
+    app: webapp
+    version: stable
+    channel: production
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+    deployment.kubernetes.io/revision: "1"
+spec:
+  replicas: 9
+  selector:
+    matchLabels:
+      app: webapp
+      version: stable
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: webapp
+        version: stable
+        channel: production
+      annotations:
+        # Inyección de Linkerd (hereda del namespace si está configurado)
+        linkerd.io/inject: enabled
+        # Prometheus scraping
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "80"
+    spec:
+      containers:
+        - name: webapp
+          image: nginx:1.25
+          ports:
+            - containerPort: 80
+              name: http
+          # Montar el HTML de v1 desde el ConfigMap
+          volumeMounts:
+            - name: html-v1
+              mountPath: /usr/share/nginx/html
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 5
+      volumes:
+        - name: html-v1
+          configMap:
+            name: webapp-html-v1

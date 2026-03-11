@@ -1,0 +1,126 @@
+---
+# PrometheusRule: canary-deployment-rules
+# Reglas y alertas específicas para el despliegue canary
+#
+# Requiere: Prometheus corriendo en namespace monitoring (módulo 10)
+# con soporte de PrometheusRule CRD (kube-prometheus-stack o similar)
+#
+# Las métricas de Kubernetes que usa:
+#   kube_deployment_spec_replicas       → réplicas configuradas
+#   kube_deployment_status_replicas_ready → réplicas listas
+#   kube_pod_status_ready               → estado de pods
+#   container_cpu_usage_seconds_total   → uso de CPU por pod/version
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: canary-deployment-rules
+  namespace: monitoring
+  labels:
+    app: canary-monitoring
+    release: prometheus      # ← debe coincidir con el label del Prometheus stack
+spec:
+  groups:
+    # ─── Grupo 1: Recording Rules (pre-calculo de métricas) ────────────────
+    - name: canary.recording
+      interval: 15s
+      rules:
+        # % del tráfico que va al canary (basado en réplicas)
+        - record: canary:traffic_percentage
+          expr: |
+            (
+              kube_deployment_spec_replicas{namespace="canary-demo", deployment="webapp-canary"}
+              /
+              (
+                kube_deployment_spec_replicas{namespace="canary-demo", deployment="webapp-stable"}
+                + kube_deployment_spec_replicas{namespace="canary-demo", deployment="webapp-canary"}
+              )
+            ) * 100
+
+        # % del tráfico que va al stable
+        - record: stable:traffic_percentage
+          expr: |
+            (
+              kube_deployment_spec_replicas{namespace="canary-demo", deployment="webapp-stable"}
+              /
+              (
+                kube_deployment_spec_replicas{namespace="canary-demo", deployment="webapp-stable"}
+                + kube_deployment_spec_replicas{namespace="canary-demo", deployment="webapp-canary"}
+              )
+            ) * 100
+
+        # Total de pods activos en canary-demo
+        - record: canary:total_pods_ready
+          expr: |
+            sum(kube_pod_status_ready{namespace="canary-demo", condition="true"})
+
+    # ─── Grupo 2: Alertas del Canary ───────────────────────────────────────
+    - name: canary.alerts
+      rules:
+        # Alerta: El pod canary NO está listo después de 2 minutos
+        - alert: CanaryPodNotReady
+          expr: |
+            kube_deployment_status_replicas_ready{namespace="canary-demo", deployment="webapp-canary"} == 0
+            AND
+            kube_deployment_spec_replicas{namespace="canary-demo", deployment="webapp-canary"} > 0
+          for: 2m
+          labels:
+            severity: warning
+            channel: canary
+          annotations:
+            summary: "Canary pod no está listo"
+            description: |
+              El deployment webapp-canary tiene {{ $value }} réplicas listas
+              pero deberían estar corriendo. Verificar el pod:
+                kubectl get pods -n canary-demo -l version=canary
+                kubectl describe pod -n canary-demo -l version=canary
+
+        # Alerta: Deployment stable cayó a 0 réplicas sin ser intencional
+        - alert: StableDeploymentDown
+          expr: |
+            kube_deployment_status_replicas_ready{namespace="canary-demo", deployment="webapp-stable"} == 0
+            AND
+            kube_deployment_spec_replicas{namespace="canary-demo", deployment="webapp-canary"} < 10
+          for: 1m
+          labels:
+            severity: critical
+            channel: canary
+          annotations:
+            summary: "Stable deployment caído durante el canary"
+            description: |
+              webapp-stable está a 0 réplicas pero el canary aún no está al 100%.
+              Puede indicar un rollback incompleto o un error en la promoción.
+              Verificar: kubectl get deployments -n canary-demo
+
+        # Alerta: El canary tiene más de 5 réplicas pero el stable está arriba (split > 50%)
+        - alert: CanaryMajorityTraffic
+          expr: |
+            canary:traffic_percentage > 50
+          for: 0m
+          labels:
+            severity: info
+            channel: canary
+          annotations:
+            summary: "Canary recibe más del 50% del tráfico"
+            description: |
+              El canary está recibiendo {{ printf "%.1f" $value }}% del tráfico.
+              Si es intencional, ignorar esta alerta.
+              Si es accidental, hacer rollback:
+                kubectl scale deployment webapp-canary -n canary-demo --replicas=1
+                kubectl scale deployment webapp-stable -n canary-demo --replicas=9
+
+        # Alerta: Migración al 100% completada (informativa)
+        - alert: CanaryMigrationComplete
+          expr: |
+            kube_deployment_spec_replicas{namespace="canary-demo", deployment="webapp-stable"} == 0
+            AND
+            kube_deployment_spec_replicas{namespace="canary-demo", deployment="webapp-canary"} > 0
+          for: 1m
+          labels:
+            severity: info
+            channel: canary
+          annotations:
+            summary: "Migración canary completada al 100%"
+            description: |
+              La migración a v2 está completa. webapp-stable tiene 0 réplicas.
+              Todo el tráfico va a webapp-canary.
+              Considerar renombrar canary → stable para el próximo ciclo.

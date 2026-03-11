@@ -1,0 +1,81 @@
+---
+# Deployment: webapp-canary
+# Version 2.0 — Canal CANARY (verde)
+#
+# IMPORTANTE: Arranca con replicas: 0 (canary inactivo)
+# El pipeline de Tekton actualizará este valor a 1 cuando active el canary.
+# Argo CD sincronizará el cambio automáticamente desde Git.
+#
+# Tekton task 'update-canary' ejecuta:
+#   yq e '.spec.replicas = 1' -i 20-canary-cicd/manifests/04-canary-deployment.yaml
+#   git commit -m "canary: activate v2 with 1 replica [ci]"
+#   git push origin main
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp-canary
+  namespace: canary-demo
+  labels:
+    app: webapp
+    version: canary
+    channel: canary
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+    deployment.kubernetes.io/revision: "1"
+    canary.deployment/activated-by: "tekton-pipeline"
+spec:
+  # ← Tekton cambiará este valor de 0 → 1 cuando active el canary
+  replicas: 0
+  selector:
+    matchLabels:
+      app: webapp
+      version: canary
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: webapp
+        version: canary
+        channel: canary
+      annotations:
+        linkerd.io/inject: enabled
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "80"
+    spec:
+      containers:
+        - name: webapp
+          image: nginx:1.25
+          ports:
+            - containerPort: 80
+              name: http
+          # Montar el HTML de v2 desde el ConfigMap
+          volumeMounts:
+            - name: html-v2
+              mountPath: /usr/share/nginx/html
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 5
+      volumes:
+        - name: html-v2
+          configMap:
+            name: webapp-html-v2

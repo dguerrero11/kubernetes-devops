@@ -1,0 +1,68 @@
+---
+# Task: canary-clone-task
+# Clona el repositorio GitHub en el workspace compartido
+# Usa alpine/git para operaciones de git
+#
+# Parámetros:
+#   repo-url  : URL del repositorio (https)
+#   revision  : rama o commit (default: main)
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: canary-clone-task
+  namespace: tekton-pipelines
+  labels:
+    app: canary-pipeline
+spec:
+  description: |
+    Clona el repositorio GitHub en el workspace.
+    Es el primer paso del pipeline canary.
+
+  params:
+    - name: repo-url
+      type: string
+      description: URL HTTPS del repositorio GitHub
+      default: https://github.com/dguerrero11/kubernetes-devops
+
+    - name: revision
+      type: string
+      description: Rama o commit SHA a clonar
+      default: main
+
+  workspaces:
+    - name: source
+      description: Workspace donde se clonará el código
+
+  steps:
+    - name: clean-workspace
+      image: alpine:3.19
+      script: |
+        #!/bin/sh
+        set -e
+        echo "=== Limpiando workspace ==="
+        rm -rf $(workspaces.source.path)/*
+        echo "Workspace limpio: $(workspaces.source.path)"
+
+    - name: git-clone
+      image: alpine/git:2.43.0
+      script: |
+        #!/bin/sh
+        set -e
+        echo "=== Clonando repositorio ==="
+        echo "URL: $(params.repo-url)"
+        echo "Rama: $(params.revision)"
+
+        git clone \
+          --depth=1 \
+          --branch $(params.revision) \
+          $(params.repo-url) \
+          $(workspaces.source.path)
+
+        echo ""
+        echo "=== Clone exitoso ==="
+        echo "Archivos en workspace:"
+        ls $(workspaces.source.path)
+
+        echo ""
+        echo "=== Último commit ==="
+        git -C $(workspaces.source.path) log --oneline -3

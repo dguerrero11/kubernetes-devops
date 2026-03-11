@@ -1,0 +1,56 @@
+---
+# Ingress para WebApp Canary Demo
+# Requiere: NGINX Ingress Controller instalado (módulo 09)
+#
+# Acceso via nip.io (DNS wildcard sin configuración):
+#   http://webapp.192.168.109.200.nip.io  → tráfico al service webapp (mixed)
+#   http://stable.192.168.109.200.nip.io  → SOLO pods v1 (debug)
+#   http://canary.192.168.109.200.nip.io  → SOLO pods v2 (debug)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: webapp-ingress
+  namespace: canary-demo
+  labels:
+    app: webapp
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    # Útil para ver cuál backend responde en los headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header X-Served-By $upstream_addr always;
+spec:
+  ingressClassName: nginx
+  rules:
+    # Hostname principal → balanceo entre stable y canary
+    - host: webapp.192.168.109.200.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: webapp
+                port:
+                  number: 80
+    # Hostname debug stable → solo v1
+    - host: stable.192.168.109.200.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: webapp-stable
+                port:
+                  number: 80
+    # Hostname debug canary → solo v2
+    - host: canary.192.168.109.200.nip.io
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: webapp-canary
+                port:
+                  number: 80

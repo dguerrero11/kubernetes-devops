@@ -1,0 +1,85 @@
+---
+# Application de Argo CD: webapp-canary
+#
+# Esta Application implementa el patrón GitOps completo:
+#   Git repo (manifests/) ──── Argo CD ────▶ Kubernetes cluster
+#
+# Lo que Argo CD sincroniza:
+#   Todos los YAMLs en: 20-canary-cicd/manifests/
+#   Del repo: https://github.com/dguerrero11/kubernetes-devops
+#   En el namespace: canary-demo
+#
+# Comportamiento:
+#   - Auto-sync: habilitado (polling cada 3 min)
+#   - Prune: si un YAML se elimina del repo, el recurso se elimina del cluster
+#   - Self-heal: si alguien hace kubectl apply manual, Argo CD revierte al estado en Git
+#
+# Acceder a Argo CD: http://192.168.109.200:30095
+# Usuario: admin | Password: kubectl get secret argocd-initial-admin-secret -n argocd ...
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: webapp-canary
+  namespace: argocd
+  labels:
+    module: "20-canary-cicd"
+    environment: production
+  annotations:
+    # Descripción visible en la UI de Argo CD
+    argocd.argoproj.io/description: |
+      Ejercicio integral Canary + Tekton CI + Argo CD GitOps.
+      Módulo 20 — DevOps 2026.
+      Despliega webapp v1 (stable) y v2 (canary) con split de tráfico por réplicas.
+spec:
+  project: default
+
+  # ─── Fuente: dónde están los manifests ───────────────────────────────────
+  source:
+    repoURL: https://github.com/dguerrero11/kubernetes-devops
+    targetRevision: main
+    # Solo sincronizar la carpeta de manifests del módulo 20
+    path: 20-canary-cicd/manifests
+
+  # ─── Destino: a qué cluster y namespace aplicar ──────────────────────────
+  destination:
+    server: https://kubernetes.default.svc   # cluster local donde corre Argo CD
+    namespace: canary-demo
+
+  # ─── Política de sincronización ──────────────────────────────────────────
+  syncPolicy:
+    automated:
+      # prune: eliminar recursos que ya no existen en Git
+      prune: true
+      # selfHeal: revertir cambios manuales (kubectl apply directo)
+      selfHeal: true
+      # allowEmpty: no permitir sincronizar si el directorio está vacío
+      allowEmpty: false
+
+    syncOptions:
+      # Crear el namespace si no existe
+      - CreateNamespace=true
+      # Aplicar manifests con server-side apply (mejor para CRDs)
+      - ServerSideApply=false
+      # Respetar el orden de los waves (anotación argocd.argoproj.io/sync-wave)
+      - RespectIgnoreDifferences=true
+
+    # Política de reintentos si la sincronización falla
+    retry:
+      limit: 3
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 1m
+
+  # ─── Qué ignorar en la comparación (evitar falsos OutOfSync) ─────────────
+  ignoreDifferences:
+    # Ignorar el campo lastAppliedConfiguration que kubectl agrega
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration
+    # Ignorar réplicas si hay un HPA activo (no hay en este módulo, por precaución)
+    # - group: apps
+    #   kind: Deployment
+    #   jsonPointers:
+    #     - /spec/replicas

@@ -1,0 +1,57 @@
+---
+# ServiceAccount para el pipeline canary
+# Todos los pods del pipeline corren con esta identidad
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: canary-pipeline-sa
+  namespace: tekton-pipelines
+  labels:
+    app: canary-pipeline
+
+---
+# ClusterRole: permisos mínimos necesarios para el pipeline
+# El pipeline necesita:
+#   - Leer el workspace (PVC)
+#   - Acceder a los secrets (GitHub token)
+#   - Leer/escribir en el namespace canary-demo (para futuras tareas de validación)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: canary-pipeline-role
+  labels:
+    app: canary-pipeline
+rules:
+  # Leer secrets (para obtener el GitHub token)
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+  # Leer/listar deployments del namespace canary-demo (validación)
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
+  # Leer configmaps
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+  # Acceso a pods/logs para depuración
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+
+---
+# ClusterRoleBinding: vincular SA con el ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: canary-pipeline-binding
+  labels:
+    app: canary-pipeline
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: canary-pipeline-role
+subjects:
+  - kind: ServiceAccount
+    name: canary-pipeline-sa
+    namespace: tekton-pipelines

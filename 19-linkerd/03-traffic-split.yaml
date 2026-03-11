@@ -1,45 +1,32 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# HTTPRoute: Traffic Splitting (Canary Deployment)
+# Canary Deployment: Traffic Splitting en Linkerd
 #
-# Distribuye el tráfico del Service "backend-svc" entre dos backends:
-#   - backend-v1-svc: 90% (versión estable)
-#   - backend-v2-svc: 10% (versión canary)
+# MÉTODO USADO EN LA CLASE: Escalado de réplicas (más fiable en Linkerd v2.14)
+#   - backend-v1: 9 réplicas → recibe ~90% del tráfico (round-robin)
+#   - backend-v2: 1 réplica  → recibe ~10% del tráfico (round-robin)
 #
-# API utilizada: policy.linkerd.io/v1beta2 (nativa de Linkerd v2.14+)
-# No requiere Gateway API CRDs adicionales.
+# NOTA sobre HTTPRoute traffic splitting en Linkerd v2.14:
+#   El soporte de Gateway API HTTPRoute para traffic splitting por pesos
+#   requiere configuración adicional (EndpointSlice explícito, modo gateway).
+#   En Linkerd v2.15+ el soporte HTTPRoute está mejorado.
+#   Para esta clase usamos el método de escalado que demuestra el mismo concepto.
+#
+# Comandos para aplicar el split 90/10:
+#   kubectl scale deployment backend-v1 -n linkerd-demo --replicas=9
+#   kubectl scale deployment backend-v2 -n linkerd-demo --replicas=1
+#
+# Para subir gradualmente la versión canary:
+#   Fase 1: v1=9, v2=1   → 90/10
+#   Fase 2: v1=5, v2=5   → 50/50
+#   Fase 3: v1=1, v2=9   → 10/90
+#   Fase 4: kubectl scale deployment backend-v1 --replicas=0  → 100% v2
+#
+# Rollback instantáneo:
+#   kubectl scale deployment backend-v2 -n linkerd-demo --replicas=0
 # ─────────────────────────────────────────────────────────────────────────────
-apiVersion: policy.linkerd.io/v1beta2
-kind: HTTPRoute
-metadata:
-  name: backend-traffic-split
-  namespace: linkerd-demo
-spec:
-  # parentRefs apunta al Service padre (el que recibe el tráfico del frontend)
-  parentRefs:
-  - name: backend-svc
-    kind: Service
-    group: ""        # "" = core API group de Kubernetes
-    port: 8080
-  rules:
-  - backendRefs:
-    # Versión estable: recibe la mayoría del tráfico
-    - name: backend-v1-svc
-      port: 8080
-      weight: 90
-    # Versión canary: recibe una porción pequeña para validar
-    - name: backend-v2-svc
-      port: 8080
-      weight: 10
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PROCESO DE PROMOCIÓN PROGRESIVA (canary release):
+# Estado inicial: el split se controla por número de réplicas.
+# Ver comandos de kubectl scale arriba para ajustar la distribución.
 #
-# Fase 1 — Validación inicial:   v1=90, v2=10   (aplica este archivo)
-# Fase 2 — Más tráfico canary:   v1=50, v2=50   (editar weights y re-aplicar)
-# Fase 3 — Casi completo:        v1=10, v2=90   (editar weights y re-aplicar)
-# Fase 4 — Migración completa:   v1=0,  v2=100  (o eliminar este HTTPRoute)
-#
-# Para volver atrás (rollback):
-#   kubectl delete httproute backend-traffic-split -n linkerd-demo
-#   (el tráfico vuelve a distribuirse normalmente entre todos los pods de backend)
-# ─────────────────────────────────────────────────────────────────────────────
+# El Service backend-svc tiene selector app=backend → incluye todos los pods.
+# Linkerd distribuye el tráfico entre todos los endpoints (round-robin por defecto).

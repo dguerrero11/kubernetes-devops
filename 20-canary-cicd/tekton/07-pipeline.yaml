@@ -1,0 +1,114 @@
+---
+# Pipeline: canary-pipeline
+# Orquesta el flujo CI completo para el despliegue canary:
+#
+#   [clone] → [validate] → [update-canary]
+#       ↓           ↓              ↓
+#   Clona repo  Valida YAMLs   Cambia réplicas
+#               Estado canary   Git push
+#                               ↓
+#                          Argo CD detecta y sincroniza
+#
+# Este pipeline implementa el patrón "GitOps CI":
+#   - El pipeline NO hace kubectl apply directamente
+#   - El pipeline ACTUALIZA el estado deseado en Git
+#   - Argo CD es el único que aplica cambios al cluster
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: canary-pipeline
+  namespace: tekton-pipelines
+  labels:
+    app: canary-pipeline
+spec:
+  description: |
+    Pipeline CI para el despliegue canary de webapp.
+    Flujo: clone → validate → update-manifest → git-push → (Argo CD sincroniza)
+
+  # Workspace compartido entre todas las tasks
+  workspaces:
+    - name: pipeline-workspace
+      description: Workspace NFS compartido (clona repo aquí)
+
+  # Parámetros configurables al lanzar el PipelineRun
+  params:
+    - name: repo-url
+      type: string
+      description: URL del repositorio GitHub
+      default: https://github.com/dguerrero11/kubernetes-devops
+
+    - name: git-revision
+      type: string
+      description: Rama a clonar y en la que hacer push
+      default: main
+
+    - name: canary-replicas
+      type: string
+      description: |
+        Número de réplicas canary:
+          "1"  → 10% del tráfico (1 de 10 pods)
+          "5"  → 50% del tráfico (5 de 10 pods)
+          "10" → 100% del tráfico (migración completa)
+      default: "1"
+
+    - name: repo-owner
+      type: string
+      description: Username del propietario del repo en GitHub
+      default: "dguerrero11"
+
+    - name: repo-name
+      type: string
+      description: Nombre del repositorio en GitHub
+      default: "kubernetes-devops"
+
+  # Tasks en orden secuencial
+  tasks:
+    # ─────────────────────────────────────────────────────
+    # STEP 1: Clonar el repositorio
+    # ─────────────────────────────────────────────────────
+    - name: clone
+      taskRef:
+        name: canary-clone-task
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
+      params:
+        - name: repo-url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.git-revision)
+
+    # ─────────────────────────────────────────────────────
+    # STEP 2: Validar manifests (corre DESPUÉS de clone)
+    # ─────────────────────────────────────────────────────
+    - name: validate
+      taskRef:
+        name: canary-validate-task
+      runAfter:
+        - clone                       # ← dependencia: necesita el repo clonado
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
+
+    # ─────────────────────────────────────────────────────
+    # STEP 3: Actualizar manifest y git push (corre DESPUÉS de validate)
+    # ─────────────────────────────────────────────────────
+    - name: update-canary
+      taskRef:
+        name: canary-update-manifest-task
+      runAfter:
+        - validate                    # ← solo avanza si validate fue exitoso
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
+      params:
+        - name: canary-replicas
+          value: $(params.canary-replicas)
+        - name: repo-owner
+          value: $(params.repo-owner)
+        - name: repo-name
+          value: $(params.repo-name)
+        - name: git-branch
+          value: $(params.git-revision)
+        - name: github-token-secret
+          value: github-token

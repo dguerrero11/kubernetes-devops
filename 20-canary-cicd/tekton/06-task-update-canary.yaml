@@ -1,0 +1,168 @@
+---
+# Task: canary-update-manifest-task
+# El corazón del pipeline CI — actualiza el manifest canary y hace git push
+#
+# Pasos que ejecuta:
+#   1. Usa 'yq' para cambiar replicas: 0 → N en el canary deployment
+#   2. Configura git identity (para el commit)
+#   3. Configura el remote con el GitHub PAT (autenticación HTTPS)
+#   4. Hace git add + commit + push
+#   5. Argo CD detecta el cambio en Git → aplica el manifest
+#
+# Parámetros:
+#   canary-replicas  : número de réplicas canary a activar (default: 1 = 10%)
+#   github-token-secret: nombre del secret con el PAT
+#   repo-owner: propietario del repo en GitHub
+#   repo-name : nombre del repo en GitHub
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: canary-update-manifest-task
+  namespace: tekton-pipelines
+  labels:
+    app: canary-pipeline
+spec:
+  description: |
+    Actualiza el manifest 04-canary-deployment.yaml en Git con el número
+    de réplicas especificado y hace push al repositorio.
+    Argo CD detectará el cambio y sincronizará el cluster.
+
+  params:
+    - name: canary-replicas
+      type: string
+      description: "Número de réplicas canary (1=10%, 5=50%, 10=100%)"
+      default: "1"
+
+    - name: repo-owner
+      type: string
+      description: Propietario del repo en GitHub
+      default: "dguerrero11"
+
+    - name: repo-name
+      type: string
+      description: Nombre del repo en GitHub
+      default: "kubernetes-devops"
+
+    - name: git-branch
+      type: string
+      description: Rama de destino para el push
+      default: "main"
+
+    - name: github-token-secret
+      type: string
+      description: Nombre del Kubernetes Secret que contiene el GitHub PAT
+      default: "github-token"
+
+  workspaces:
+    - name: source
+      description: Workspace con el repo clonado
+
+  volumes:
+    - name: github-token-vol
+      secret:
+        secretName: github-token
+
+  steps:
+    - name: update-replicas
+      image: mikefarah/yq:4.40.5
+      workingDir: $(workspaces.source.path)
+      script: |
+        #!/bin/sh
+        set -e
+        CANARY_FILE="20-canary-cicd/manifests/04-canary-deployment.yaml"
+
+        echo "========================================"
+        echo "  ACTUALIZANDO CANARY DEPLOYMENT"
+        echo "========================================"
+        echo ""
+        echo "Archivo: $CANARY_FILE"
+        echo "Réplicas actuales:"
+        yq e '.spec.replicas' "$CANARY_FILE"
+
+        echo ""
+        echo "Actualizando replicas: 0 → $(params.canary-replicas)"
+        yq e '.spec.replicas = $(params.canary-replicas)' -i "$CANARY_FILE"
+
+        echo ""
+        echo "Réplicas después de la actualización:"
+        yq e '.spec.replicas' "$CANARY_FILE"
+
+        echo ""
+        echo "Contenido del campo spec.replicas verificado correctamente."
+
+    - name: git-commit-push
+      image: alpine/git:2.43.0
+      workingDir: $(workspaces.source.path)
+      volumeMounts:
+        - name: github-token-vol
+          mountPath: /secrets/github
+      script: |
+        #!/bin/sh
+        set -e
+
+        echo "========================================"
+        echo "  GIT COMMIT Y PUSH"
+        echo "========================================"
+        echo ""
+
+        # Leer el token del secret montado
+        GITHUB_TOKEN=$(cat /secrets/github/token)
+        GITHUB_USER=$(cat /secrets/github/username)
+
+        # Configurar identidad git
+        git config user.email "tekton@cicd.local"
+        git config user.name "Tekton Pipeline"
+
+        # Configurar remote con autenticación HTTPS
+        git remote set-url origin \
+          "https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/$(params.repo-owner)/$(params.repo-name).git"
+
+        echo "Remote configurado con autenticación."
+        echo ""
+
+        # Ver el estado del repositorio
+        echo "Cambios a commitear:"
+        git diff --stat
+
+        # Añadir solo el archivo modificado
+        git add 20-canary-cicd/manifests/04-canary-deployment.yaml
+
+        # Verificar que hay cambios
+        if git diff --cached --quiet; then
+          echo ""
+          echo "INFO: No hay cambios en el manifest (ya tiene $(params.canary-replicas) réplicas)."
+          echo "El canary ya estaba activo con ese número de réplicas."
+          exit 0
+        fi
+
+        # Crear commit con mensaje descriptivo
+        TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+        git commit -m "canary: activate v2 with $(params.canary-replicas) replica(s) [ci skip]
+
+Activado por: Tekton Pipeline
+Timestamp: ${TIMESTAMP}
+Replicas canary: $(params.canary-replicas)
+Porcentaje de tráfico estimado: $(echo "$(params.canary-replicas) * 10" | sh)%
+
+[Tekton CI — Módulo 20 Canary+CI/CD]"
+
+        echo ""
+        echo "Commit creado:"
+        git log --oneline -1
+
+        echo ""
+        echo "Haciendo push a origin/$(params.git-branch)..."
+        git push origin $(params.git-branch)
+
+        echo ""
+        echo "========================================"
+        echo "  PUSH EXITOSO"
+        echo "========================================"
+        echo ""
+        echo "Argo CD detectará el cambio en Git en los proximos 3 min."
+        echo "Para sincronizar inmediatamente:"
+        echo "  argocd app sync webapp-canary"
+        echo ""
+        echo "Luego verificar con:"
+        echo "  kubectl get deployments -n canary-demo"
+        echo "  kubectl get pods -n canary-demo"

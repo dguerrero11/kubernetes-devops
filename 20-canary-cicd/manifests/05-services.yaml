@@ -1,0 +1,73 @@
+---
+# Service principal: webapp
+# Selector: app=webapp → incluye TODOS los pods (stable + canary)
+# El tráfico se distribuye por round-robin entre todos los endpoints.
+# El split % depende del número de réplicas de cada deployment.
+#
+# Ejemplo con 9 stable + 1 canary:
+#   10 endpoints totales → ~10% va al pod canary
+#
+# NodePort 30099 → acceso directo desde fuera del cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: webapp
+  namespace: canary-demo
+  labels:
+    app: webapp
+  annotations:
+    # Anotación para Linkerd: balanceo a nivel de request (no conexión)
+    # balancer.linkerd.io/algorithm: p2c
+spec:
+  type: NodePort
+  selector:
+    app: webapp         # ← selecciona AMBOS: stable y canary
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      nodePort: 30099   # ← http://192.168.109.200:30099
+
+---
+# Service debug: webapp-stable
+# Solo para depuración: permite enviar tráfico EXCLUSIVAMENTE a v1
+# No está expuesto externamente (ClusterIP)
+apiVersion: v1
+kind: Service
+metadata:
+  name: webapp-stable
+  namespace: canary-demo
+  labels:
+    app: webapp
+    version: stable
+spec:
+  type: ClusterIP
+  selector:
+    app: webapp
+    version: stable     # ← solo pods stable
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+
+---
+# Service debug: webapp-canary
+# Solo para depuración: permite enviar tráfico EXCLUSIVAMENTE a v2
+# No está expuesto externamente (ClusterIP)
+apiVersion: v1
+kind: Service
+metadata:
+  name: webapp-canary
+  namespace: canary-demo
+  labels:
+    app: webapp
+    version: canary
+spec:
+  type: ClusterIP
+  selector:
+    app: webapp
+    version: canary     # ← solo pods canary
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80

@@ -1,0 +1,59 @@
+---
+# Load Generator — genera tráfico continuo hacia la webapp
+# Permite ver el split de tráfico en Grafana/Loki/Linkerd en tiempo real
+#
+# Cada réplica envía ~2 req/seg al service webapp (mixed stable+canary)
+# Con 2 réplicas: ~4 req/seg = ~240 req/min
+#
+# Ver logs del generador:
+#   kubectl logs -n canary-demo -l app=load-generator --tail=20 -f
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load-generator
+  namespace: canary-demo
+  labels:
+    app: load-generator
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: load-generator
+  template:
+    metadata:
+      labels:
+        app: load-generator
+      annotations:
+        # No inyectar sidecar Linkerd al generador (innecesario)
+        linkerd.io/inject: disabled
+    spec:
+      containers:
+        - name: curl-loop
+          image: curlimages/curl:8.5.0
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Load generator iniciado. Target: http://webapp.canary-demo.svc.cluster.local"
+              while true; do
+                RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}\nTIME:%{time_total}" \
+                  http://webapp.canary-demo.svc.cluster.local/)
+
+                # Detectar versión por contenido del response
+                if echo "$RESPONSE" | grep -q "VERSION 1.0"; then
+                  echo "[$(date '+%H:%M:%S')] HIT stable v1 | $(echo $RESPONSE | grep -o 'HTTP_CODE:[0-9]*')"
+                elif echo "$RESPONSE" | grep -q "VERSION 2.0"; then
+                  echo "[$(date '+%H:%M:%S')] HIT canary v2 | $(echo $RESPONSE | grep -o 'HTTP_CODE:[0-9]*')"
+                else
+                  echo "[$(date '+%H:%M:%S')] HIT unknown   | $(echo $RESPONSE | grep -o 'HTTP_CODE:[0-9]*')"
+                fi
+
+                sleep 0.5
+              done
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "16Mi"
+            limits:
+              cpu: "50m"
+              memory: "32Mi"

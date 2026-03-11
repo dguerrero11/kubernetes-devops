@@ -1,0 +1,44 @@
+---
+# PVC para el workspace del pipeline canary
+# Usa el NFS Server (192.168.109.210) igual que el módulo 11
+# Path NFS: /srv/nfs/k8s/tekton-workspace (ya existe, chmod 777)
+#
+# Si el PVC del módulo 11 ya existe, se puede reusar cambiando el nombre
+# del workspace en el Pipeline. Este crea uno nuevo dedicado para canary.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: canary-pipeline-workspace
+  namespace: tekton-pipelines
+  labels:
+    app: canary-pipeline
+spec:
+  accessModes:
+    - ReadWriteMany    # NFS soporta múltiples nodos leyendo/escribiendo
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: nfs-manual
+
+---
+# PersistentVolume para el workspace (NFS)
+# Apunta al mismo path del módulo 11 (tekton-workspace)
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: canary-pipeline-pv
+  labels:
+    app: canary-pipeline
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs-manual
+  nfs:
+    server: 192.168.109.210
+    path: /srv/nfs/k8s/tekton-workspace
+  claimRef:
+    name: canary-pipeline-workspace
+    namespace: tekton-pipelines

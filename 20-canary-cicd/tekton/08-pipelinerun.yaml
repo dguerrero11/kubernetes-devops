@@ -1,0 +1,65 @@
+---
+# PipelineRun: canary-pipeline-run-v2
+# Instancia de ejecución del pipeline canary.
+# Lanzar con:
+#   kubectl create -f tekton/08-pipelinerun.yaml
+#
+# NOTA: Usar 'kubectl create' (no apply) para crear una instancia nueva cada vez.
+# PipelineRuns son inmutables — cada ejecución crea un objeto nuevo.
+#
+# Ver progreso en:
+#   kubectl get pipelinerun -n tekton-pipelines -w
+#   http://192.168.109.200:30094  (Tekton Dashboard)
+#
+# Para cambiar el número de réplicas canary, editar el parámetro canary-replicas:
+#   "1"  → Fase 1: activar canary al 10%
+#   "5"  → Fase 2: promover al 50%
+#   "10" → Fase 3: migración completa al 100%
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  # IMPORTANTE: El nombre debe ser único cada vez que se lanza.
+  # Cambiar 'v2-activate' por 'v2-promote-50' o 'v2-promote-100' según la fase.
+  name: canary-run-v2-activate
+  namespace: tekton-pipelines
+  labels:
+    app: canary-pipeline
+    fase: "activacion-10-pct"
+spec:
+  pipelineRef:
+    name: canary-pipeline
+
+  # ServiceAccount con permisos para leer secrets (GitHub token)
+  taskRunTemplate:
+    serviceAccountName: canary-pipeline-sa
+
+  # Workspace: conectar el PVC NFS al workspace del pipeline
+  workspaces:
+    - name: pipeline-workspace
+      persistentVolumeClaim:
+        claimName: canary-pipeline-workspace
+
+  # Parámetros de esta ejecución
+  params:
+    - name: repo-url
+      value: https://github.com/dguerrero11/kubernetes-devops
+
+    - name: git-revision
+      value: main
+
+    # ← CAMBIAR ESTE VALOR según la fase de promoción:
+    #   "1"  = Fase 1: 10% canary (1 pod de 10)
+    #   "5"  = Fase 2: 50% canary (5 pods de 10)
+    #   "10" = Fase 3: 100% canary (migración completa)
+    - name: canary-replicas
+      value: "1"
+
+    - name: repo-owner
+      value: "dguerrero11"
+
+    - name: repo-name
+      value: "kubernetes-devops"
+
+  # Timeout para el pipeline completo (5 minutos es suficiente)
+  timeouts:
+    pipeline: "5m0s"

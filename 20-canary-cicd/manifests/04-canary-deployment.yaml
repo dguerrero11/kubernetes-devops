@@ -25,7 +25,7 @@ metadata:
     canary.deployment/activated-by: "tekton-pipeline"
 spec:
   # ← Tekton cambiará este valor de 0 → 1 cuando active el canary
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app: webapp

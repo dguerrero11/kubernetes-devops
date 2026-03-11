@@ -66,3 +66,8 @@ spec:
         echo ""
         echo "=== Último commit ==="
         git -C $(workspaces.source.path) log --oneline -3
+
+        echo ""
+        echo "=== Fijando permisos del workspace (NFS) ==="
+        chmod -R 777 $(workspaces.source.path)
+        echo "Permisos OK — workspace listo para escritura"

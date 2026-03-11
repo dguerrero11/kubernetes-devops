@@ -53,7 +53,9 @@ spec:
 
   steps:
     - name: update-replicas
-      image: mikefarah/yq:4.40.5
+      # alpine en vez de mikefarah/yq — usa sed que opera en el mismo
+      # filesystem (rename) y evita el cross-filesystem copy de yq
+      image: alpine:3.19
       workingDir: $(workspaces.source.path)
       script: |
         #!/bin/sh
@@ -66,15 +68,18 @@ spec:
         echo ""
         echo "Archivo: $CANARY_FILE"
         echo "Replicas actuales:"
-        yq e '.spec.replicas' "$CANARY_FILE"
+        grep "  replicas:" "$CANARY_FILE"
 
         echo ""
         echo "Actualizando replicas a: $(params.canary-replicas)"
-        yq e ".spec.replicas = $(params.canary-replicas)" -i "$CANARY_FILE"
+
+        # sed -i crea temp en el mismo directorio y usa rename()
+        # No hace copy cross-filesystem → evita el permission denied con NFS
+        sed -i "s/^  replicas: [0-9]*/  replicas: $(params.canary-replicas)/" "$CANARY_FILE"
 
         echo ""
         echo "Replicas despues de la actualizacion:"
-        yq e '.spec.replicas' "$CANARY_FILE"
+        grep "  replicas:" "$CANARY_FILE"
         echo ""
         echo "Actualizacion completada correctamente."
 

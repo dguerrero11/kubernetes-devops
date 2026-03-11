@@ -7,10 +7,10 @@
 # Uso:
 #   bash scripts/watch-traffic.sh
 #   bash scripts/watch-traffic.sh 50         # 50 peticiones
-#   bash scripts/watch-traffic.sh 100 http://192.168.109.201:30099  # otro nodo
+#   bash scripts/watch-traffic.sh 100 http://192.168.109.201:30110  # otro nodo
 
 REQUESTS=${1:-20}
-URL=${2:-"http://192.168.109.200:30099"}
+URL=${2:-"http://192.168.109.200:30110"}
 NAMESPACE="canary-demo"
 
 echo "========================================"
@@ -68,13 +68,13 @@ if [ $TOTAL -eq 0 ]; then
   exit 1
 fi
 
-V1_PCT=$(echo "scale=1; $V1_COUNT * 100 / $TOTAL" | bc 2>/dev/null || echo "N/A")
-V2_PCT=$(echo "scale=1; $V2_COUNT * 100 / $TOTAL" | bc 2>/dev/null || echo "N/A")
+V1_PCT=$(( V1_COUNT * 100 / TOTAL ))
+V2_PCT=$(( V2_COUNT * 100 / TOTAL ))
 
 # Barra de progreso visual
 BAR_LENGTH=30
-V1_BARS=$(echo "$V1_COUNT * $BAR_LENGTH / $TOTAL" | bc 2>/dev/null || echo "0")
-V2_BARS=$(echo "$V2_COUNT * $BAR_LENGTH / $TOTAL" | bc 2>/dev/null || echo "0")
+V1_BARS=$(( V1_COUNT * BAR_LENGTH / TOTAL ))
+V2_BARS=$(( V2_COUNT * BAR_LENGTH / TOTAL ))
 V1_EMPTY=$((BAR_LENGTH - V1_BARS))
 V2_EMPTY=$((BAR_LENGTH - V2_BARS))
 

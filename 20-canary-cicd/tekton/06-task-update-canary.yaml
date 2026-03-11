@@ -103,6 +103,7 @@ spec:
 
         git config user.email "tekton@cicd.local"
         git config user.name "Tekton Pipeline"
+        git config core.fileMode false
 
         git remote set-url origin \
           "https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com/$(params.repo-owner)/$(params.repo-name).git"

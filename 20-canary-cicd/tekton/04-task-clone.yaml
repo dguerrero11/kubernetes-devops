@@ -38,10 +38,15 @@ spec:
       image: alpine:3.19
       script: |
         #!/bin/sh
-        set -e
         echo "=== Limpiando workspace ==="
-        rm -rf $(workspaces.source.path)/*
-        echo "Workspace limpio: $(workspaces.source.path)"
+        TARGET="$(workspaces.source.path)"
+        cd "$TARGET"
+        # find sin -depth intenta borrar dirs antes de vaciarlos → falla silencioso
+        # Solución: listar top-level (incluye .git) y rm -rf cada entrada
+        find . -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+        REMAINING=$(find . -mindepth 1 | wc -l)
+        echo "Archivos restantes: $REMAINING"
+        echo "Workspace limpio: $TARGET"
 
     - name: git-clone
       image: alpine/git:2.43.0

@@ -1,0 +1,123 @@
+---
+# ============================================================
+# DEMO 6 — Health check del cluster Kubernetes
+# Objetivo: verificar el estado del cluster usando Ansible
+#           como orquestador (solo lectura, sin cambios).
+#
+# Ejecutar:
+#   ansible-playbook 06-k8s-health.yml
+# ============================================================
+- name: "DEMO 6 · Health check completo del cluster K8s"
+  hosts: masters
+  gather_facts: false
+
+  tasks:
+
+    # ── Tarea 1: Estado de los nodos ────────────────────────
+    - name: "Estado de nodos del cluster"
+      ansible.builtin.command: kubectl get nodes -o wide
+      register: nodos
+      changed_when: false
+
+    - name: "Mostrar nodos"
+      ansible.builtin.debug:
+        msg: "{{ nodos.stdout_lines }}"
+
+    # ── Tarea 2: Pods no-Running en todos los namespaces ────
+    - name: "Detectar pods en estado anómalo"
+      ansible.builtin.shell: |
+        kubectl get pods --all-namespaces \
+          --field-selector=status.phase!=Running \
+          --field-selector=status.phase!=Succeeded \
+          2>/dev/null || echo "Todos los pods están Running o Succeeded"
+      register: pods_anomalos
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Pods en estado anómalo"
+      ansible.builtin.debug:
+        msg: "{{ pods_anomalos.stdout_lines }}"
+
+    # ── Tarea 3: Conteo de pods por namespace ───────────────
+    - name: "Contar pods por namespace"
+      ansible.builtin.shell: |
+        kubectl get pods --all-namespaces --no-headers \
+          | awk '{print $1}' | sort | uniq -c | sort -rn
+      register: pods_por_ns
+      changed_when: false
+
+    - name: "Distribución de pods por namespace"
+      ansible.builtin.debug:
+        msg: "{{ pods_por_ns.stdout_lines }}"
+
+    # ── Tarea 4: Estado de componentes del control plane ────
+    - name: "Estado de componentes del control plane"
+      ansible.builtin.command: kubectl get componentstatuses 2>/dev/null
+      register: componentes
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Componentes del cluster"
+      ansible.builtin.debug:
+        msg: "{{ componentes.stdout_lines }}"
+
+    # ── Tarea 5: PersistentVolumes y su estado ─────────────
+    - name: "Estado de PersistentVolumes"
+      ansible.builtin.command: kubectl get pv
+      register: pvs
+      changed_when: false
+
+    - name: "PersistentVolumes"
+      ansible.builtin.debug:
+        msg: "{{ pvs.stdout_lines }}"
+
+    # ── Tarea 6: Ingress activos ────────────────────────────
+    - name: "Ingress configurados"
+      ansible.builtin.shell: kubectl get ingress --all-namespaces 2>/dev/null || echo "Sin Ingress"
+      register: ingress_lista
+      changed_when: false
+
+    - name: "Ingress"
+      ansible.builtin.debug:
+        msg: "{{ ingress_lista.stdout_lines }}"
+
+    # ── Tarea 7: Uso de recursos por nodo ──────────────────
+    - name: "Uso de recursos del cluster (top nodes)"
+      ansible.builtin.command: kubectl top nodes
+      register: top_nodes
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Recursos por nodo"
+      ansible.builtin.debug:
+        msg: "{{ top_nodes.stdout_lines }}"
+
+    # ── Tarea 8: Resumen de alertas Falco (últimas 10) ─────
+    - name: "Últimas alertas de Falco"
+      ansible.builtin.shell: |
+        FALCO_POD=$(kubectl get pod -n falco -o name | head -1)
+        kubectl logs $FALCO_POD -n falco --tail=10 \
+          | grep -E "Warning|Notice" || echo "Sin alertas recientes"
+      register: falco_alerts
+      changed_when: false
+      ignore_errors: true
+
+    - name: "Alertas Falco recientes"
+      ansible.builtin.debug:
+        msg: "{{ falco_alerts.stdout_lines }}"
+
+    # ── Tarea 9: Resumen final ──────────────────────────────
+    - name: "═══ RESUMEN DEL CLUSTER ═══"
+      ansible.builtin.shell: |
+        echo "Nodos:     $(kubectl get nodes --no-headers | wc -l)"
+        echo "Pods total: $(kubectl get pods --all-namespaces --no-headers | wc -l)"
+        echo "Running:   $(kubectl get pods --all-namespaces --no-headers | grep Running | wc -l)"
+        echo "Namespaces: $(kubectl get namespaces --no-headers | wc -l)"
+        echo "Services:  $(kubectl get svc --all-namespaces --no-headers | wc -l)"
+        echo "PVs:       $(kubectl get pv --no-headers | wc -l)"
+      register: resumen
+      changed_when: false
+
+    - name: "📊 Estado del cluster"
+      ansible.builtin.debug:
+        msg: "{{ resumen.stdout_lines }}"

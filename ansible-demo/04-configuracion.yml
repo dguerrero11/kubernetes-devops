@@ -1,0 +1,122 @@
+---
+# ============================================================
+# DEMO 4 — Configuración de sistema y archivos
+# Objetivo: gestionar configuración de forma declarativa:
+#           MOTD personalizado, zona horaria, aliases útiles,
+#           y archivo de bienvenida.
+#
+# Ejecutar:
+#   ansible-playbook 04-configuracion.yml
+#   ansible-playbook 04-configuracion.yml --diff   # ver diferencias
+# ============================================================
+- name: "DEMO 4 · Configuración declarativa del sistema"
+  hosts: k8s
+  gather_facts: true
+
+  tasks:
+
+    # ── Tarea 1: Zona horaria ───────────────────────────────
+    - name: "Configurar zona horaria"
+      community.general.timezone:
+        name: "{{ timezone }}"
+
+    - name: "Verificar zona horaria aplicada"
+      ansible.builtin.command: timedatectl show --property=Timezone --value
+      register: tz_actual
+      changed_when: false
+
+    - name: "Mostrar timezone"
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} → Timezone: {{ tz_actual.stdout }}"
+
+    # ── Tarea 2: Banner MOTD desde template Jinja2 ─────────
+    - name: "Desplegar MOTD personalizado (template)"
+      ansible.builtin.template:
+        src:   templates/motd.j2
+        dest:  /etc/motd
+        owner: root
+        group: root
+        mode:  '0644'
+      notify: Mostrar MOTD actualizado
+
+    # ── Tarea 3: Aliases útiles para el equipo ─────────────
+    - name: "Agregar aliases de Kubernetes y Docker"
+      ansible.builtin.copy:
+        dest: /etc/profile.d/devops-aliases.sh
+        mode: '0644'
+        owner: root
+        group: root
+        content: |
+          # ── Aliases DevOps generados por Ansible ──
+          alias k='kubectl'
+          alias kg='kubectl get'
+          alias kgp='kubectl get pods -o wide'
+          alias kgpa='kubectl get pods --all-namespaces -o wide'
+          alias kd='kubectl describe'
+          alias kl='kubectl logs -f'
+          alias kx='kubectl exec -it'
+          alias ctx='kubectl config use-context'
+          alias ns='kubectl config set-context --current --namespace'
+
+          # ── Aliases de sistema ──
+          alias ll='ls -lah --color=auto'
+          alias la='ls -lah --color=auto'
+          alias df='df -h'
+          alias du='du -sh'
+          alias grep='grep --color=auto'
+          alias ..='cd ..'
+          alias ...='cd ../..'
+
+          # ── Función: ver logs Falco en tiempo real ──
+          falco-watch() {
+            local nodo="${1:-$(kubectl get pod -n falco -o wide | awk 'NR>1{print $1}' | head -1)}"
+            kubectl logs -n falco "$nodo" -f | grep -E "Warning|Notice|Error"
+          }
+
+          # ── Función: estado rápido del cluster ──
+          k8s-status() {
+            echo "=== Nodos ==="
+            kubectl get nodes -o wide
+            echo ""
+            echo "=== Pods no Running ==="
+            kubectl get pods --all-namespaces | grep -v "Running\|Completed\|NAME"
+          }
+
+    # ── Tarea 4: Sincronizar tiempo con chrony ──────────────
+    - name: "Asegurar que chrony está instalado"
+      ansible.builtin.dnf:
+        name: chrony
+        state: present
+
+    - name: "Asegurar que chronyd está activo y habilitado"
+      ansible.builtin.service:
+        name: chronyd
+        state: started
+        enabled: true
+
+    - name: "Verificar sincronización NTP"
+      ansible.builtin.command: chronyc tracking
+      register: ntp_status
+      changed_when: false
+
+    - name: "Estado de sincronización NTP"
+      ansible.builtin.debug:
+        msg: "{{ ntp_status.stdout_lines | select('match', '.*System time.*|.*Stratum.*') | list }}"
+
+    # ── Tarea 5: Configurar historial de bash ──────────────
+    - name: "Aumentar historial de bash (auditoría)"
+      ansible.builtin.lineinfile:
+        path: /etc/bashrc
+        regexp: "{{ item.regexp }}"
+        line:   "{{ item.line }}"
+        state: present
+        backup: true
+      loop:
+        - { regexp: '^HISTSIZE=',     line: 'HISTSIZE=10000' }
+        - { regexp: '^HISTFILESIZE=', line: 'HISTFILESIZE=20000' }
+        - { regexp: '^HISTTIMEFORMAT=', line: 'HISTTIMEFORMAT="%F %T "' }
+
+  handlers:
+    - name: Mostrar MOTD actualizado
+      ansible.builtin.debug:
+        msg: "MOTD actualizado en {{ inventory_hostname }}"

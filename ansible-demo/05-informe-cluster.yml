@@ -1,0 +1,107 @@
+---
+# ============================================================
+# DEMO 5 — Generación de informe del cluster
+# Objetivo: recolectar información de todos los nodos y
+#           generar un reporte centralizado en el master.
+#           (Solo lectura — no modifica nada)
+#
+# Ejecutar:
+#   ansible-playbook 05-informe-cluster.yml
+#   cat reports/informe-cluster.txt
+# ============================================================
+- name: "DEMO 5 · Recolección de información y generación de informe"
+  hosts: k8s
+  gather_facts: true
+
+  tasks:
+
+    # ── Tarea 1: Uso de disco ───────────────────────────────
+    - name: "Obtener uso de disco por partición"
+      ansible.builtin.shell: df -h --output=source,size,used,avail,pcent,target | tail -n +2
+      register: disco_info
+      changed_when: false
+
+    # ── Tarea 2: Procesos consumidores de CPU ───────────────
+    - name: "Top 5 procesos por CPU"
+      ansible.builtin.shell: "ps aux --sort=-%cpu | head -6 | tail -5 | awk '{printf \"%-20s %5s%% CPU  %5s%% MEM\\n\",$11,$3,$4}'"
+      register: top_procesos
+      changed_when: false
+
+    # ── Tarea 3: Conexiones de red activas ──────────────────
+    - name: "Contar conexiones TCP activas"
+      ansible.builtin.shell: "ss -tn state established | wc -l"
+      register: conexiones_tcp
+      changed_when: false
+
+    # ── Tarea 4: Pods en este nodo (via crictl) ─────────────
+    - name: "Listar pods en el nodo via crictl"
+      ansible.builtin.shell: "crictl pods --state ready 2>/dev/null | wc -l || echo 'N/A'"
+      register: pods_nodo
+      changed_when: false
+
+    # ── Tarea 5: Uso de memoria detallado ──────────────────
+    - name: "Estado de memoria"
+      ansible.builtin.shell: "free -h | awk 'NR==2{printf \"Usada: %s / Total: %s (Libre: %s)\",$3,$2,$4}'"
+      register: memoria_info
+      changed_when: false
+
+    # ── Tarea 6: Verificar kubelet ──────────────────────────
+    - name: "Estado de kubelet"
+      ansible.builtin.shell: "systemctl is-active kubelet 2>/dev/null || echo 'inactivo'"
+      register: kubelet_estado
+      changed_when: false
+
+- name: "Generar informe consolidado en el master"
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+
+    - name: "Crear directorio de reportes"
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/reports"
+        state: directory
+        mode: '0755'
+
+    - name: "Generar informe en texto"
+      ansible.builtin.copy:
+        dest: "{{ playbook_dir }}/reports/informe-cluster.txt"
+        content: |
+          ================================================================
+          INFORME DE CLUSTER — {{ ansible_date_time.date | default('hoy') }}
+          Generado automáticamente por Ansible
+          ================================================================
+          {% for host in groups['k8s'] %}
+          {% set hv = hostvars[host] %}
+
+          ┌─ NODO: {{ host }} ({{ hv.ansible_default_ipv4.address }})
+          │  OS:         {{ hv.ansible_distribution }} {{ hv.ansible_distribution_version }}
+          │  Kernel:     {{ hv.ansible_kernel }}
+          │  CPUs:       {{ hv.ansible_processor_vcpus }}
+          │  RAM:        {{ (hv.ansible_memtotal_mb / 1024) | round(1) }} GB
+          │  Memoria:    {{ hv.memoria_info.stdout }}
+          │  Kubelet:    {{ hv.kubelet_estado.stdout }}
+          │  TCP activas:{{ hv.conexiones_tcp.stdout }} conexiones
+          │  Pods (crictl):{{ hv.pods_nodo.stdout }}
+          │
+          │  TOP 5 PROCESOS POR CPU:
+          {% for linea in hv.top_procesos.stdout_lines %}
+          │    {{ linea }}
+          {% endfor %}
+          │
+          │  USO DE DISCO:
+          {% for linea in hv.disco_info.stdout_lines %}
+          │    {{ linea }}
+          {% endfor %}
+          └─────────────────────────────────────────────────────
+          {% endfor %}
+
+          ================================================================
+          FIN DEL INFORME
+          ================================================================
+      delegate_to: localhost
+      run_once: true
+
+    - name: "Informe generado"
+      ansible.builtin.debug:
+        msg: "✅ Informe guardado en: {{ playbook_dir }}/reports/informe-cluster.txt"

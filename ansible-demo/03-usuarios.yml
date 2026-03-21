@@ -1,0 +1,117 @@
+---
+# ============================================================
+# DEMO 3 — Gestión de usuarios en toda la flota
+# Objetivo: crear un usuario devops con acceso SSH en los
+#           3 nodos de una sola vez.
+#
+# Ejecutar:
+#   ansible-playbook 03-usuarios.yml
+#   ansible-playbook 03-usuarios.yml --check  # dry-run
+#
+# Verificar:
+#   ansible k8s -m command -a "id devops"
+# ============================================================
+- name: "DEMO 3 · Gestión centralizada de usuarios"
+  hosts: k8s
+  gather_facts: false
+
+  vars:
+    usuarios:
+      - nombre: devops
+        uid: 2001
+        comentario: "Operador DevOps"
+        shell: /bin/bash
+        grupos: ["wheel"]
+        estado: present
+
+      - nombre: monitoreo
+        uid: 2002
+        comentario: "Usuario de monitoreo (solo lectura)"
+        shell: /bin/bash
+        grupos: []
+        estado: present
+
+      - nombre: auditoria
+        uid: 2003
+        comentario: "Auditor — acceso solo lectura"
+        shell: /sbin/nologin     # ← no puede hacer login interactivo
+        grupos: []
+        estado: present
+
+  tasks:
+
+    # ── Tarea 1: Crear grupo devops ─────────────────────────
+    - name: "Crear grupo devops si no existe"
+      ansible.builtin.group:
+        name: devops
+        gid: 2001
+        state: present
+
+    # ── Tarea 2: Crear todos los usuarios del loop ──────────
+    - name: "Crear usuarios del equipo"
+      ansible.builtin.user:
+        name:       "{{ item.nombre }}"
+        uid:        "{{ item.uid }}"
+        comment:    "{{ item.comentario }}"
+        shell:      "{{ item.shell }}"
+        groups:     "{{ item.grupos }}"
+        append:     true
+        state:      "{{ item.estado }}"
+        create_home: true
+      loop: "{{ usuarios }}"
+      loop_control:
+        label: "{{ item.nombre }}"
+
+    # ── Tarea 3: Establecer contraseña temporal ─────────────
+    # Contraseña: Devops2026! (hasheada con SHA-512)
+    - name: "Establecer contraseña temporal para devops"
+      ansible.builtin.user:
+        name: devops
+        password: "{{ 'Devops2026!' | password_hash('sha512', 'saltclass') }}"
+        update_password: on_create   # solo si el usuario es nuevo
+
+    # ── Tarea 4: Directorio .ssh y clave autorizada ─────────
+    - name: "Crear directorio .ssh para devops"
+      ansible.builtin.file:
+        path: /home/devops/.ssh
+        state: directory
+        mode: '0700'
+        owner: devops
+        group: devops
+
+    - name: "Agregar clave SSH autorizada (placeholder)"
+      ansible.builtin.copy:
+        dest: /home/devops/.ssh/authorized_keys
+        content: |
+          # Agregar aquí las claves SSH públicas del equipo
+          # Ejemplo: ssh-rsa AAAA... nombre@equipo
+        mode: '0600'
+        owner: devops
+        group: devops
+        force: false   # no sobreescribir si ya existe
+
+    # ── Tarea 5: Verificar usuarios creados ─────────────────
+    - name: "Verificar que los usuarios existen"
+      ansible.builtin.command: "id {{ item.nombre }}"
+      register: verificacion
+      changed_when: false
+      loop: "{{ usuarios }}"
+      loop_control:
+        label: "{{ item.nombre }}"
+
+    - name: "Mostrar IDs de usuarios creados"
+      ansible.builtin.debug:
+        msg: "{{ item.stdout }}"
+      loop: "{{ verificacion.results }}"
+      loop_control:
+        label: "usuario"
+
+    # ── Tarea 6: Mostrar resumen ────────────────────────────
+    - name: "Resumen de usuarios en {{ inventory_hostname }}"
+      ansible.builtin.shell: "getent passwd | grep -E '^(devops|monitoreo|auditoria):'"
+      register: resumen_usuarios
+      changed_when: false
+
+    - name: "Listar usuarios del equipo"
+      ansible.builtin.debug:
+        msg: "{{ resumen_usuarios.stdout_lines }}"

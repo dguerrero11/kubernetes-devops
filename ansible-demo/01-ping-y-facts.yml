@@ -1,0 +1,58 @@
+---
+# ============================================================
+# DEMO 1 — Conectividad y recolección de hechos (Facts)
+# Objetivo: demostrar que Ansible conoce TODO de los nodos
+#           sin instalar ningún agente.
+#
+# Ejecutar:
+#   ansible-playbook 01-ping-y-facts.yml
+#   ansible-playbook 01-ping-y-facts.yml --limit masters
+# ============================================================
+- name: "DEMO 1 · Conectividad y sistema de información"
+  hosts: k8s
+  gather_facts: true
+
+  tasks:
+
+    # ── Tarea 1: Ping básico ────────────────────────────────
+    - name: "Verificar conectividad SSH con todos los nodos"
+      ansible.builtin.ping:
+      register: resultado_ping
+
+    - name: "Mostrar resultado del ping"
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} → {{ resultado_ping.ping }}"
+
+    # ── Tarea 2: Resumen del sistema (usando facts) ─────────
+    - name: "Mostrar resumen del nodo"
+      ansible.builtin.debug:
+        msg: |
+          ╔══════════════════════════════════════════╗
+           Nodo:    {{ inventory_hostname }}
+           IP:      {{ ansible_default_ipv4.address }}
+           OS:      {{ ansible_distribution }} {{ ansible_distribution_version }}
+           Kernel:  {{ ansible_kernel }}
+           CPUs:    {{ ansible_processor_vcpus }}
+           RAM:     {{ (ansible_memtotal_mb / 1024) | round(1) }} GB
+           Disco /:  {{ ansible_mounts | selectattr('mount', 'equalto', '/') | map(attribute='size_total') | first | filesizeformat }}
+          ╚══════════════════════════════════════════╝
+
+    # ── Tarea 3: Tiempo activo ──────────────────────────────
+    - name: "Obtener uptime del nodo"
+      ansible.builtin.command: uptime -p
+      register: uptime_resultado
+      changed_when: false
+
+    - name: "Mostrar uptime"
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} lleva activo: {{ uptime_resultado.stdout }}"
+
+    # ── Tarea 4: Servicios críticos ─────────────────────────
+    - name: "Verificar que containerd está activo"
+      ansible.builtin.service_facts:
+
+    - name: "Estado de containerd"
+      ansible.builtin.debug:
+        msg: >
+          containerd en {{ inventory_hostname }}:
+          {{ ansible_facts.services['containerd.service'].state | default('no encontrado') }}

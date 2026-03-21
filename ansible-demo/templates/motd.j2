@@ -1,0 +1,14 @@
+
+╔══════════════════════════════════════════════════════════════╗
+║          {{ motd_cluster_name | center(58) }}          ║
+╠══════════════════════════════════════════════════════════════╣
+║  Host:    {{ inventory_hostname | ljust(50) }} ║
+║  IP:      {{ ansible_default_ipv4.address | ljust(50) }} ║
+║  OS:      {{ (ansible_distribution + ' ' + ansible_distribution_version) | ljust(50) }} ║
+║  Kernel:  {{ ansible_kernel | ljust(50) }} ║
+║  Stack:   {{ motd_version | ljust(50) }} ║
+╠══════════════════════════════════════════════════════════════╣
+║  ⚠️  Acceso autorizado únicamente. Toda actividad            ║
+║     es monitoreada y registrada por Falco + Loki.           ║
+╚══════════════════════════════════════════════════════════════╝
+

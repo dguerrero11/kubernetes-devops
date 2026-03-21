@@ -1,0 +1,37 @@
+# ============================================================
+# Variables globales — aplican a todos los nodos
+# ============================================================
+
+# Zona horaria del cluster
+timezone: "America/Mexico_City"
+
+# Paquetes a instalar (no intrusivos, herramientas de admin)
+paquetes_utiles:
+  - htop          # monitor de procesos interactivo
+  - tree          # visualización de árbol de directorios
+  - vim           # editor avanzado
+  - net-tools     # ifconfig, netstat, route
+  - tmux          # multiplexor de terminal
+  - jq            # procesamiento JSON en CLI
+  - curl          # HTTP desde terminal
+  - wget          # descarga de archivos
+  - bash-completion  # autocompletado de bash
+  - unzip         # descomprimir archivos
+  - bind-utils    # nslookup, dig (DNS tools)
+  - tcpdump       # captura de paquetes de red
+
+# Usuario de operaciones a crear en todos los nodos
+devops_user:
+  nombre: devops
+  uid: 2001
+  grupo: devops
+  shell: /bin/bash
+  comentario: "Usuario operaciones DevOps"
+  grupos_extra:
+    - wheel       # sudo
+  ssh_key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC... devops@clase"
+  # ↑ En producción: poner tu clave pública real aquí
+
+# Banner MOTD
+motd_cluster_name: "Cluster Kubernetes DevOps — Clase"
+motd_version: "K8s v1.28.15 · Rocky Linux 9.6"

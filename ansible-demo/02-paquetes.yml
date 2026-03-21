@@ -1,0 +1,62 @@
+---
+# ============================================================
+# DEMO 2 — Gestión de paquetes (idempotencia en acción)
+# Objetivo: instalar herramientas de admin en los 3 nodos
+#           con UN SOLO comando. Ejecutar 2 veces para
+#           demostrar idempotencia (segunda vez: 0 cambios).
+#
+# Ejecutar:
+#   ansible-playbook 02-paquetes.yml
+#   ansible-playbook 02-paquetes.yml   # ← segunda vez: sin cambios
+#   ansible-playbook 02-paquetes.yml --check  # dry-run
+# ============================================================
+- name: "DEMO 2 · Instalación de paquetes en toda la flota"
+  hosts: k8s
+  gather_facts: false
+
+  tasks:
+
+    # ── Tarea 1: Instalar paquetes de la lista ──────────────
+    - name: "Instalar herramientas de administración"
+      ansible.builtin.dnf:
+        name: "{{ paquetes_utiles }}"
+        state: present
+      register: resultado_paquetes
+
+    # ── Tarea 2: Mostrar qué se instaló ────────────────────
+    - name: "Mostrar resumen de instalación"
+      ansible.builtin.debug:
+        msg: >
+          {{ inventory_hostname }}:
+          {% if resultado_paquetes.changed %}
+            ✅ Instalados {{ resultado_paquetes.results | default([]) | length }} paquete(s) nuevos
+          {% else %}
+            ☑️  Todos los paquetes ya estaban instalados (idempotencia)
+          {% endif %}
+
+    # ── Tarea 3: Verificar que jq funciona ─────────────────
+    - name: "Verificar versión de jq instalado"
+      ansible.builtin.command: jq --version
+      register: jq_version
+      changed_when: false
+
+    - name: "Confirmar jq disponible"
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} → jq listo: {{ jq_version.stdout }}"
+
+    # ── Tarea 4: htop (demo visual) ─────────────────────────
+    - name: "Verificar versión de htop"
+      ansible.builtin.command: htop --version
+      register: htop_version
+      changed_when: false
+
+    - name: "Confirmar htop disponible"
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }} → {{ htop_version.stdout_lines[0] }}"
+
+    # ── Tarea 5: Limpiar caché dnf ─────────────────────────
+    - name: "Limpiar caché dnf para liberar espacio"
+      ansible.builtin.dnf:
+        autoremove: false
+        update_cache: false
+      changed_when: false

@@ -1,0 +1,44 @@
+# ============================================================
+# ETAPA 4 — DEPLOY: Aplicación con vulnerabilidades intencionales
+# NOTA: NO especificar namespace aquí; usar -n devsecops-demo
+#        al momento de aplicar con kubectl apply.
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webapp
+  # ⚠️  Sin 'namespace:' en metadata — se pasa con -n al aplicar
+  labels:
+    app: webapp
+    stage: devsecops-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webapp
+  template:
+    metadata:
+      labels:
+        app: webapp
+    spec:
+      # ⚠️ Sin securityContext → corre como root (intencional para la demo)
+      containers:
+      - name: nginx
+        image: nginx:1.25          # imagen pública, posibles CVEs altas
+        ports:
+        - containerPort: 80
+        # Sin límites de recursos (intencional)
+        # Sin readOnlyRootFilesystem (intencional)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webapp-svc
+  # ⚠️  Sin 'namespace:' en metadata — se pasa con -n al aplicar
+spec:
+  selector:
+    app: webapp
+  ports:
+  - port: 80
+    targetPort: 80
+  type: ClusterIP

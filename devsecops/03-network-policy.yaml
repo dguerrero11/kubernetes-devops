@@ -1,0 +1,51 @@
+# ============================================================
+# ETAPA 5 — RELEASE/OPERATE: NetworkPolicy
+# Patrón: deny-all → allow-dns → allow-ingress-interno
+# ============================================================
+
+# 1) Denegar TODO el tráfico entrante y saliente por defecto
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  # ⚠️  Sin 'namespace:' — usar -n devsecops-demo al aplicar
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+# 2) Permitir DNS (CRÍTICO — sin esto los pods no resuelven nombres)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-dns
+  # ⚠️  Sin 'namespace:' — usar -n devsecops-demo al aplicar
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    - port: 53
+      protocol: TCP
+---
+# 3) Permitir tráfico al webapp solo desde el mismo namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-webapp-ingress
+  # ⚠️  Sin 'namespace:' — usar -n devsecops-demo al aplicar
+spec:
+  podSelector:
+    matchLabels:
+      app: webapp
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: devsecops-demo

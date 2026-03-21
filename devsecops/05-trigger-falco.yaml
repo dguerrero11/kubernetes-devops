@@ -1,0 +1,22 @@
+# ============================================================
+# ETAPA 7 — OPERATE: Pod que dispara alertas en Falco
+# Lee /etc/shadow → genera alerta "Warning" en Falco
+# ============================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: trigger-falco
+  # ⚠️  Sin 'namespace:' — usar -n devsecops-demo al aplicar
+spec:
+  restartPolicy: Never
+  containers:
+  - name: trigger
+    image: busybox:1.36
+    command:
+    - sh
+    - -c
+    - |
+      echo "=== Leyendo /etc/shadow (dispara alerta Falco Warning) ==="
+      cat /etc/shadow || true
+      echo "=== Fin del trigger ==="
+      sleep 30
